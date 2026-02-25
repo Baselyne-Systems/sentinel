@@ -29,6 +29,10 @@ def mock_neo4j():
 @pytest.fixture
 def api_client(mock_neo4j):
     """FastAPI test client with mocked Neo4j."""
+    from sentinel_api.deps import set_neo4j_client as _set_client
+
+    # Clear any client injected by e2e tests so the lifespan runs normally
+    _set_client(None)  # type: ignore[arg-type]
     app = create_app()
 
     with patch("sentinel_api.main.Neo4jClient") as MockClient:

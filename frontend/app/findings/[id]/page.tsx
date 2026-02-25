@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { graphApi, agentApi, type GraphNode, type AnalysisResult } from "@/lib/api";
+import { graphApi, agentApi, remediationApi, type GraphNode, type AnalysisResult } from "@/lib/api";
 import { AnalysisPanel } from "@/components/agent/AnalysisPanel";
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -52,6 +52,7 @@ export default function FindingDetailPage() {
   const [cachedAnalysis, setCachedAnalysis] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [proposing, setProposing] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -90,6 +91,17 @@ export default function FindingDetailPage() {
   const postureFlags: string[] = (node.posture_flags as string[]) || [];
   const tags = (node.tags as Record<string, string>) || {};
 
+  async function handleProposeRemediation() {
+    setProposing(true);
+    try {
+      await remediationApi.propose(nodeId);
+      router.push("/remediations");
+    } catch (err: unknown) {
+      if (err instanceof Error) setError(err.message);
+      setProposing(false);
+    }
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       {/* Back nav */}
@@ -102,8 +114,17 @@ export default function FindingDetailPage() {
 
       {/* Header */}
       <div className="mb-6">
-        <div className="flex items-start gap-3 flex-wrap">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <h1 className="text-2xl font-bold text-slate-100 break-all">{nodeId}</h1>
+          {postureFlags.length > 0 && (
+            <button
+              onClick={handleProposeRemediation}
+              disabled={proposing}
+              className="shrink-0 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-600/40 text-blue-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {proposing ? "Proposing…" : "Propose Remediation"}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 mt-2 flex-wrap">
           <span className="text-slate-500 text-sm">{node.resource_type}</span>

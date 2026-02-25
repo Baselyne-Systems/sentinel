@@ -59,10 +59,10 @@ async def list_nodes(
             "SecurityGroup, VPC, Subnet, S3Bucket, RDSInstance, LambdaFunction, "
             "IAMRole, IAMUser, IAMPolicy."
         ),
-        examples={"s3": {"value": "S3Bucket"}, "iam": {"value": "IAMRole"}},
+        examples=["S3Bucket", "IAMRole"],
     ),
-    account_id: str | None = Query(None, description="Filter by AWS account ID.", examples={"default": {"value": "123456789012"}}),
-    region: str | None = Query(None, description="Filter by AWS region.", examples={"us-east-1": {"value": "us-east-1"}}),
+    account_id: str | None = Query(None, description="Filter by AWS account ID.", examples=["123456789012"]),
+    region: str | None = Query(None, description="Filter by AWS region.", examples=["us-east-1"]),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of nodes to return."),
     offset: int = Query(0, ge=0, description="Number of nodes to skip (for pagination)."),
 ) -> list[dict[str, Any]]:

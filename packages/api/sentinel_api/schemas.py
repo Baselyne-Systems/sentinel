@@ -81,6 +81,8 @@ class GraphNodeDetailResponse(GraphNodeResponse):
         description="All edges connected to this node. Each edge has edge_type, neighbor_id, neighbor_type, is_outbound.",
     )
 
+    model_config = {"extra": "allow"}
+
 
 class GraphEdgeResponse(BaseModel):
     """An edge (relationship) between two nodes."""

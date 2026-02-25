@@ -120,6 +120,28 @@ class AnalysisCompleteEvent:
 
 
 @dataclass
+class ThinkingDeltaEvent:
+    """
+    A single streamed token from Claude's extended thinking block.
+
+    Only emitted when the analyze endpoint is called with ``?thinking=true``.
+    The frontend accumulates these into a collapsible "Claude's reasoning" panel
+    shown alongside the main analysis text.
+
+    Attributes:
+        thinking: The raw thinking token string.
+        event: Fixed discriminator ``"thinking_delta"`` — do not override.
+    """
+
+    thinking: str
+    event: str = field(default="thinking_delta", init=False)
+
+    def to_sse(self) -> str:
+        """Return an SSE-formatted data line for this thinking token."""
+        return f"data: {json.dumps({'event': self.event, 'thinking': self.thinking})}\n\n"
+
+
+@dataclass
 class ErrorEvent:
     """
     The agent encountered a non-recoverable error.
@@ -142,7 +164,7 @@ class ErrorEvent:
 
 
 # Union type used as the return/yield type annotation throughout the agent layer.
-SSEEvent = Union[TextDeltaEvent, ToolUseEvent, AnalysisCompleteEvent, ErrorEvent]
+SSEEvent = Union[TextDeltaEvent, ThinkingDeltaEvent, ToolUseEvent, AnalysisCompleteEvent, ErrorEvent]
 
 
 # ── Structured output model ────────────────────────────────────────────────────

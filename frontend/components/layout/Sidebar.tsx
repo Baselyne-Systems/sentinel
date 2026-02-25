@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: "⬡" },
   { href: "/graph", label: "Graph Explorer", icon: "◈" },
   { href: "/findings", label: "Findings", icon: "◉" },
+  { href: "/remediations", label: "Remediations", icon: "⬢" },
 ];
 
 export function Sidebar() {
@@ -39,7 +40,7 @@ export function Sidebar() {
 
       {/* Bottom info */}
       <div className="mt-auto px-4 pt-6 border-t border-[#2a2d3e]">
-        <p className="text-xs text-slate-600">Phase 1 · Foundation</p>
+        <p className="text-xs text-slate-600">Phase 3 · Action</p>
       </div>
     </nav>
   );

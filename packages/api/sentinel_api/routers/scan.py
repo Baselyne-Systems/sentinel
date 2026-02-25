@@ -44,7 +44,7 @@ class ScanRequest(BaseModel):
             "AWS account ID to scan. If omitted, uses the default credential chain. "
             "Must be registered via POST /accounts if using assume-role."
         ),
-        examples={"default": {"value": "123456789012"}},
+        examples=["123456789012"],
     )
     regions: list[str] | None = Field(
         None,
@@ -52,7 +52,7 @@ class ScanRequest(BaseModel):
             "AWS regions to scan. Defaults to the AWS_REGIONS environment variable. "
             "Specify a subset to speed up scans during development."
         ),
-        examples={"single": {"value": ["us-east-1"]}, "multi": {"value": ["us-east-1", "us-west-2"]}},
+        examples=[["us-east-1"], ["us-east-1", "us-west-2"]],
     )
     assume_role_arn: str | None = Field(
         None,

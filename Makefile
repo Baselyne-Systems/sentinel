@@ -42,6 +42,21 @@ test-e2e:
 test-all:
 	uv run pytest tests/ -v --tb=short --timeout=120
 
+## Run performance benchmarks (requires Docker)
+bench:
+	uv run pytest tests/benchmarks/ -v -m benchmark --timeout=300 \
+	  --benchmark-sort=mean --benchmark-warmup=on
+
+## Save benchmark baseline for regression comparison
+bench-save:
+	uv run pytest tests/benchmarks/ -v -m benchmark --timeout=300 \
+	  --benchmark-sort=mean --benchmark-save=baseline
+
+## Compare benchmarks against saved baseline
+bench-compare:
+	uv run pytest tests/benchmarks/ -v -m benchmark --timeout=300 \
+	  --benchmark-sort=mean --benchmark-compare=baseline
+
 ## Run tests with coverage (unit + integration)
 test-cov:
 	uv run pytest tests/unit tests/integration -v --tb=short \

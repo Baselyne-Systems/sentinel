@@ -116,13 +116,16 @@ async def _stream_events(agent_gen) -> AsyncGenerator[bytes, None]:
         "- `analysis_complete` — final structured AnalysisResult\n"
         "- `error` — non-recoverable failure\n\n"
         "The analysis result is cached on the Neo4j node so subsequent `GET /analysis` "
-        "requests do not re-run the agent."
+        "requests do not re-run the agent.\n\n"
+        "Pass `?thinking=true` to enable extended thinking mode — Claude will emit its "
+        "internal reasoning as `thinking_delta` SSE events before producing the analysis."
     ),
 )
 async def analyze_finding(
     node_id: str,
     agent: AgentDep,
     neo4j: Neo4jDep,
+    thinking: bool = False,
 ) -> StreamingResponse:
     """
     Start an AI analysis for a security finding and stream the result.
@@ -150,7 +153,7 @@ async def analyze_finding(
     account_id = result[0].get("account_id") or "unknown"
 
     return StreamingResponse(
-        _stream_events(agent.analyze_finding(node_id, account_id)),
+        _stream_events(agent.analyze_finding(node_id, account_id, enable_thinking=thinking)),
         headers=_SSE_HEADERS,
     )
 
@@ -229,6 +232,7 @@ async def generate_brief(
     neo4j: Neo4jDep,
     account_id: str | None = None,
     top_n: int = 5,
+    thinking: bool = False,
 ) -> StreamingResponse:
     """
     Stream an executive security brief for an account's top-N findings.
@@ -259,10 +263,22 @@ async def generate_brief(
             )
         account_id = result[0]["account_id"]
 
+    # Verify findings exist for the account before starting the stream
+    findings_check = await neo4j.query(
+        "MATCH (n:GraphNode) WHERE n.account_id = $account_id AND size(n.posture_flags) > 0 "
+        "RETURN count(n) AS cnt",
+        {"account_id": account_id},
+    )
+    if not findings_check or findings_check[0].get("cnt", 0) == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No findings for account '{account_id}'. Run a scan first.",
+        )
+
     # Guard against unreasonably large briefs that would time out
     top_n = max(1, min(top_n, 20))
 
     return StreamingResponse(
-        _stream_events(agent.generate_brief(account_id, top_n)),
+        _stream_events(agent.generate_brief(account_id, top_n, enable_thinking=thinking)),
         headers=_SSE_HEADERS,
     )

@@ -34,7 +34,7 @@ class AccountRegistration(BaseModel):
         ...,
         description="12-digit AWS account ID.",
         pattern=r"^\d{12}$",
-        examples={"default": {"value": "123456789012"}},
+        examples=["123456789012"],
     )
     name: str = Field(
         default="",
@@ -53,10 +53,7 @@ class AccountRegistration(BaseModel):
         default=["us-east-1"],
         description="AWS regions to include in scans for this account.",
         min_length=1,
-        examples={
-            "single": {"value": ["us-east-1"]},
-            "multi": {"value": ["us-east-1", "us-west-2", "eu-west-1"]},
-        },
+        examples=[["us-east-1"], ["us-east-1", "us-west-2", "eu-west-1"]],
     )
 
 

@@ -80,6 +80,7 @@ from sentinel_agent.models import (
     RemediationStep,
     SSEEvent,
     TextDeltaEvent,
+    ThinkingDeltaEvent,
     ToolUseEvent,
 )
 from sentinel_agent.prompts import SYSTEM_PROMPT, build_brief_message, build_finding_message
@@ -113,6 +114,8 @@ class AgentSettings:
     anthropic_api_key: str
     agent_model: str = "claude-opus-4-6"
     agent_max_tokens: int = 4096
+    enable_thinking: bool = False
+    thinking_budget_tokens: int = 8000
 
 
 # ── XML parsing helpers ────────────────────────────────────────────────────────
@@ -260,11 +263,13 @@ class SentinelAgent:
         self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         self._model = settings.agent_model
         self._max_tokens = settings.agent_max_tokens
+        self._enable_thinking = settings.enable_thinking
+        self._thinking_budget_tokens = settings.thinking_budget_tokens
         self._tools = AgentTools(neo4j_client)
         self._neo4j = neo4j_client
 
     async def analyze_finding(
-        self, node_id: str, account_id: str
+        self, node_id: str, account_id: str, *, enable_thinking: bool | None = None
     ) -> AsyncIterator[SSEEvent]:
         """
         Stream a complete security analysis for a single finding node.
@@ -314,9 +319,10 @@ class SentinelAgent:
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": initial_message}]
         full_response_text = ""
+        use_thinking = self._enable_thinking if enable_thinking is None else enable_thinking
 
         # Stream the tool-use loop; accumulate all text for XML parsing at the end
-        async for event in self._run_tool_loop(messages):
+        async for event in self._run_tool_loop(messages, enable_thinking=use_thinking):
             if isinstance(event, TextDeltaEvent):
                 full_response_text += event.text
             yield event
@@ -342,7 +348,7 @@ class SentinelAgent:
         yield AnalysisCompleteEvent(result=result)
 
     async def generate_brief(
-        self, account_id: str, top_n: int = 5
+        self, account_id: str, top_n: int = 5, *, enable_thinking: bool | None = None
     ) -> AsyncIterator[SSEEvent]:
         """
         Stream an executive security brief covering the top-N findings.
@@ -394,8 +400,9 @@ class SentinelAgent:
         )
         messages: list[dict[str, Any]] = [{"role": "user", "content": initial_message}]
         full_response_text = ""
+        use_thinking = self._enable_thinking if enable_thinking is None else enable_thinking
 
-        async for event in self._run_tool_loop(messages):
+        async for event in self._run_tool_loop(messages, enable_thinking=use_thinking):
             if isinstance(event, TextDeltaEvent):
                 full_response_text += event.text
             yield event
@@ -416,7 +423,7 @@ class SentinelAgent:
         yield AnalysisCompleteEvent(result=result)
 
     async def _run_tool_loop(
-        self, messages: list[dict[str, Any]]
+        self, messages: list[dict[str, Any]], *, enable_thinking: bool = False
     ) -> AsyncIterator[SSEEvent]:
         """
         Core streaming tool-use loop (shared by both public methods).
@@ -426,11 +433,16 @@ class SentinelAgent:
         1. Opens a streaming request to the Anthropic API with the current
            conversation history and tool schemas.
         2. Yields ``TextDeltaEvent`` for every text token received.
-        3. After the stream closes, calls ``get_final_message()`` to retrieve
-           the complete message (including any ``tool_use`` content blocks).
-        4. Appends the assistant turn to ``messages``.
-        5. If ``stop_reason == "end_turn"`` (or no tool blocks): **break**.
-        6. Otherwise: dispatches each tool, yields ``ToolUseEvent``, and
+        3. When ``enable_thinking=True``, also yields ``ThinkingDeltaEvent``
+           for tokens inside Claude's extended thinking blocks.  The
+           ``interleaved-thinking-2025-05-14`` beta is enabled automatically.
+        4. After the stream closes, calls ``get_final_message()`` to retrieve
+           the complete message (including any ``tool_use`` and ``thinking``
+           content blocks, preserving thinking block signatures for multi-turn
+           correctness).
+        5. Appends the assistant turn to ``messages``.
+        6. If ``stop_reason == "end_turn"`` (or no tool blocks): **break**.
+        7. Otherwise: dispatches each tool, yields ``ToolUseEvent``, and
            appends a ``tool_result`` user message before the next iteration.
 
         The loop is bounded by ``_MAX_TOOL_ROUNDS``.  If exhausted, a warning
@@ -440,59 +452,85 @@ class SentinelAgent:
         Args:
             messages: Mutable conversation history list.  Modified in-place
                 (new assistant and user turns are appended each round).
+            enable_thinking: When ``True``, enable extended thinking mode.
+                Adds the ``thinking`` parameter and ``interleaved-thinking``
+                beta header to the API call.  ``max_tokens`` is automatically
+                raised to ``thinking_budget_tokens + 2048`` if needed.
 
         Yields:
-            ``TextDeltaEvent`` and ``ToolUseEvent`` objects.
+            ``TextDeltaEvent``, ``ThinkingDeltaEvent``, and ``ToolUseEvent``
+            objects.
         """
         for round_num in range(self._MAX_TOOL_ROUNDS):
-            assistant_text = ""
             tool_use_blocks: list[dict[str, Any]] = []
 
-            async with self._client.messages.stream(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                system=SYSTEM_PROMPT,
-                tools=TOOL_SCHEMAS,
-                messages=messages,
-            ) as stream:
-                # Stream individual tokens to the client in real time
+            # Build the API call parameters; add thinking params when opted in.
+            # max_tokens must exceed budget_tokens — raise it automatically.
+            effective_max_tokens = self._max_tokens
+            api_kwargs: dict[str, Any] = {
+                "model": self._model,
+                "system": SYSTEM_PROMPT,
+                "tools": TOOL_SCHEMAS,
+                "messages": messages,
+            }
+            if enable_thinking:
+                effective_max_tokens = max(
+                    self._max_tokens, self._thinking_budget_tokens + 2048
+                )
+                api_kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": self._thinking_budget_tokens,
+                }
+                api_kwargs["betas"] = ["interleaved-thinking-2025-05-14"]
+            api_kwargs["max_tokens"] = effective_max_tokens
+
+            async with self._client.messages.stream(**api_kwargs) as stream:
+                # Stream individual tokens to the client in real time.
+                # Thinking deltas (type "thinking_delta") are emitted separately
+                # so the frontend can render them in a collapsible panel.
                 async for chunk in stream:
                     if chunk.type == "content_block_delta":
-                        if hasattr(chunk.delta, "text"):
-                            token = chunk.delta.text
-                            assistant_text += token
-                            yield TextDeltaEvent(text=token)
+                        delta = chunk.delta
+                        if delta.type == "text_delta":
+                            yield TextDeltaEvent(text=delta.text)
+                        elif enable_thinking and delta.type == "thinking_delta":
+                            yield ThinkingDeltaEvent(thinking=delta.thinking)
 
-                # Get the complete final message to read stop_reason and tool blocks
+                # Get the complete final message to read stop_reason and all
+                # content blocks (text, thinking + signature, tool_use).
                 final_message = await stream.get_final_message()
                 stop_reason = final_message.stop_reason
 
-                # Collect tool_use content blocks (may be empty on end_turn)
-                for block in final_message.content:
-                    if block.type == "tool_use":
-                        tool_use_blocks.append(
-                            {
-                                "id": block.id,
-                                "name": block.name,
-                                "input": block.input,
-                            }
-                        )
-
-            # Reconstruct the full assistant content block list for the message history.
-            # The Anthropic API requires that text and tool_use blocks appear together
-            # in a single assistant message — we can't split them.
+            # Reconstruct the full assistant content block list for the message
+            # history.  The Anthropic API requires that all block types (thinking,
+            # text, tool_use) appear together in a single assistant message and
+            # that thinking blocks carry their original ``signature`` field.
             assistant_content: list[dict[str, Any]] = []
-            if assistant_text:
-                assistant_content.append({"type": "text", "text": assistant_text})
-            for tb in tool_use_blocks:
-                assistant_content.append(
-                    {
-                        "type": "tool_use",
-                        "id": tb["id"],
-                        "name": tb["name"],
-                        "input": tb["input"],
-                    }
-                )
+            for block in final_message.content:
+                if block.type == "thinking":
+                    # Preserve the signature — required for multi-turn thinking
+                    assistant_content.append(
+                        {
+                            "type": "thinking",
+                            "thinking": block.thinking,
+                            "signature": block.signature,
+                        }
+                    )
+                elif block.type == "text":
+                    if block.text:
+                        assistant_content.append({"type": "text", "text": block.text})
+                elif block.type == "tool_use":
+                    tool_use_blocks.append(
+                        {"id": block.id, "name": block.name, "input": block.input}
+                    )
+                    assistant_content.append(
+                        {
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        }
+                    )
             messages.append({"role": "assistant", "content": assistant_content})
 
             # If Claude is done (or produced no tool calls), exit the loop

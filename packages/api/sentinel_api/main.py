@@ -19,9 +19,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sentinel_api import __version__
 from sentinel_api.config import get_settings
-from sentinel_api.deps import set_neo4j_client
-from sentinel_api.routers import accounts, agent, graph, posture, scan
+from sentinel_api.deps import get_neo4j_client, set_neo4j_client
+from sentinel_api.routers import accounts, agent, graph, posture, remediation, scan
 from sentinel_core.graph.client import Neo4jClient
+from sentinel_perception.cloudtrail_poller import CloudTrailPoller
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +75,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     - Connects to Neo4j
     - Creates graph indexes (idempotent)
     - Registers the client as a module-level singleton
+    - Optionally starts the CloudTrail poller (ENABLE_CLOUDTRAIL_POLLING=true)
 
     Runs on shutdown:
+    - Stops the CloudTrail poller (if running)
     - Closes the Neo4j connection pool
     """
+    # If a client was pre-injected (e.g. in tests), skip startup/teardown.
+    try:
+        get_neo4j_client()
+        logger.info("SENTINEL API v%s ready (pre-injected client)", __version__)
+        yield
+        return
+    except RuntimeError:
+        pass  # No pre-injected client — proceed with normal startup.
+
     settings = get_settings()
 
     client = Neo4jClient(
@@ -85,13 +97,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         user=settings.neo4j_user,
         password=settings.neo4j_password,
     )
+    poller: CloudTrailPoller | None = None
     try:
         await client.connect()
         await client.ensure_indexes()
         set_neo4j_client(client)
         logger.info("SENTINEL API v%s ready", __version__)
+
+        if settings.enable_cloudtrail_polling:
+            if not settings.aws_account_id:
+                logger.warning(
+                    "ENABLE_CLOUDTRAIL_POLLING=true but AWS_ACCOUNT_ID is not set — "
+                    "CloudTrail polling will not start. Set AWS_ACCOUNT_ID in .env."
+                )
+            else:
+                poller = CloudTrailPoller(
+                    neo4j_client=client,
+                    account_id=settings.aws_account_id,
+                    regions=settings.regions_list,
+                    poll_interval=settings.cloudtrail_poll_interval,
+                    assume_role_arn=settings.aws_assume_role_arn or None,
+                )
+                await poller.start()
+                logger.info(
+                    "CloudTrail poller started (account=%s, regions=%s, interval=%ds)",
+                    settings.aws_account_id,
+                    settings.regions_list,
+                    settings.cloudtrail_poll_interval,
+                )
+
         yield
     finally:
+        if poller is not None:
+            await poller.stop()
         await client.close()
 
 
@@ -148,6 +186,13 @@ def create_app() -> FastAPI:
                     "Optional for same-account usage."
                 ),
             },
+            {
+                "name": "remediation",
+                "description": (
+                    "Phase 3: Propose, approve, and execute autonomous remediations. "
+                    "Human approval is always required before any AWS change is made."
+                ),
+            },
         ],
     )
 
@@ -167,6 +212,7 @@ def create_app() -> FastAPI:
     app.include_router(posture.router, prefix=PREFIX)
     app.include_router(scan.router, prefix=PREFIX)
     app.include_router(accounts.router, prefix=PREFIX)
+    app.include_router(remediation.router, prefix=PREFIX)
 
     @app.get(
         "/health",

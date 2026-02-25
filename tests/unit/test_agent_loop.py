@@ -127,6 +127,7 @@ def _make_text_chunk(text: str):
     chunk = MagicMock()
     chunk.type = "content_block_delta"
     chunk.delta = MagicMock()
+    chunk.delta.type = "text_delta"
     chunk.delta.text = text
     return chunk
 

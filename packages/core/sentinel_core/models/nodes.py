@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,13 +34,25 @@ class GraphNode(BaseModel):
         return ["GraphNode", self.resource_type]
 
     def to_neo4j_props(self) -> dict[str, Any]:
-        """Serialize for Neo4j MERGE. Converts nested objects to JSON-safe types."""
+        """Serialize for Neo4j MERGE. Converts nested objects to JSON-safe types.
+
+        Neo4j only supports primitive types and lists of primitives as property
+        values. All dict-valued fields (e.g. tags, inbound_rules, trust_policy)
+        are JSON-serialized to strings so they round-trip safely.
+        """
         data = self.model_dump(mode="json")
-        # Flatten tags to a string list for Neo4j
-        data["tags_json"] = str(self.tags)
+        # Serialize tags as JSON string; remove the original dict field.
+        data["tags_json"] = json.dumps(self.tags)
+        del data["tags"]
         # posture_flags as plain string list
         data["posture_flags"] = [str(f) for f in self.posture_flags]
         data["discovered_at"] = self.discovered_at.isoformat()
+        # Serialize any remaining dict or list-of-dict fields to JSON strings.
+        for key, value in list(data.items()):
+            if isinstance(value, dict):
+                data[key] = json.dumps(value)
+            elif isinstance(value, list) and value and isinstance(value[0], dict):
+                data[key] = json.dumps(value)
         return data
 
 

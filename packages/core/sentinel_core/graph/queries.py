@@ -79,7 +79,7 @@ class GraphQueries:
     async def find_iam_users_without_mfa(self, account_id: str | None = None) -> list[dict[str, Any]]:
         """Return IAMUser nodes that have console access but no MFA."""
         params: dict[str, Any] = {}
-        account_filter = "AND u.account_id = $account_id" if account_id else ""
+        account_filter = "WHERE u.account_id = $account_id" if account_id else ""
         if account_id:
             params["account_id"] = account_id
         cypher = f"""
@@ -92,7 +92,7 @@ class GraphQueries:
     async def find_unencrypted_rds(self, account_id: str | None = None) -> list[dict[str, Any]]:
         """Return RDS instances without encryption."""
         params: dict[str, Any] = {}
-        account_filter = "AND r.account_id = $account_id" if account_id else ""
+        account_filter = "WHERE r.account_id = $account_id" if account_id else ""
         if account_id:
             params["account_id"] = account_id
         cypher = f"""

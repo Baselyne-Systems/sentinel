@@ -59,6 +59,36 @@ function ToolUsePill({ toolName, summary }: { toolName: string; summary: string 
   );
 }
 
+// ── Collapsible thinking block ─────────────────────────────────────────────────
+
+function ThinkingBlock({ text, isStreaming }: { text: string; isStreaming: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <div className="mb-3 border border-violet-800/50 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-violet-900/20 hover:bg-violet-900/30 transition-colors text-xs text-violet-300"
+      >
+        <span className="flex items-center gap-2 font-medium">
+          <span className="text-violet-400">✦</span>
+          Claude&apos;s reasoning
+          {isStreaming && <span className="animate-pulse text-violet-500">thinking…</span>}
+        </span>
+        <span className="text-violet-600">{open ? "▲ hide" : "▼ show"}</span>
+      </button>
+      {open && (
+        <div className="px-3 py-3 bg-[#0d0f1a] max-h-80 overflow-y-auto">
+          <p className="text-xs text-violet-300/70 font-mono whitespace-pre-wrap leading-relaxed">
+            {text}
+            {isStreaming && <span className="animate-pulse text-violet-400">▋</span>}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main AnalysisPanel ─────────────────────────────────────────────────────────
 
 interface Props {
@@ -72,8 +102,10 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
   const [state, setState] = useState<StreamState>(initialAnalysis ? "done" : "idle");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(initialAnalysis ?? null);
   const [streamText, setStreamText] = useState("");
+  const [thinkingText, setThinkingText] = useState("");
   const [toolEvents, setToolEvents] = useState<Array<{ name: string; summary: string }>>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [enableThinking, setEnableThinking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const textRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +117,7 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
 
   const startAnalysis = () => {
     setStreamText("");
+    setThinkingText("");
     setToolEvents([]);
     setErrorMsg("");
     setAnalysis(null);
@@ -95,6 +128,8 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
       (event: SSEEventType) => {
         if (event.event === "text_delta") {
           setStreamText((t) => t + event.text);
+        } else if (event.event === "thinking_delta") {
+          setThinkingText((t) => t + event.thinking);
         } else if (event.event === "tool_use") {
           setToolEvents((prev) => [
             ...prev,
@@ -114,7 +149,8 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
       (err) => {
         setErrorMsg(err.message);
         setState("error");
-      }
+      },
+      { thinking: enableThinking }
     );
   };
 
@@ -127,35 +163,52 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
     <div className="bg-[#13152a] border border-[#2a2d3e] rounded-xl p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-slate-100 font-semibold text-lg">AI Security Analysis</h2>
-        {state === "idle" && (
-          <button
-            onClick={startAnalysis}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Analyze with AI
-          </button>
-        )}
-        {state === "streaming" && (
-          <button
-            onClick={cancel}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-        )}
-        {state === "done" && (
-          <button
-            onClick={startAnalysis}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors"
-          >
-            Re-analyze
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Extended thinking toggle — only shown in idle/done state */}
+          {(state === "idle" || state === "done") && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={enableThinking}
+                onChange={(e) => setEnableThinking(e.target.checked)}
+                className="w-3.5 h-3.5 accent-violet-500"
+              />
+              <span className="text-xs text-slate-500">Extended thinking</span>
+            </label>
+          )}
+          {state === "idle" && (
+            <button
+              onClick={startAnalysis}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Analyze with AI
+            </button>
+          )}
+          {state === "streaming" && (
+            <button
+              onClick={cancel}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          {state === "done" && (
+            <button
+              onClick={startAnalysis}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors"
+            >
+              Re-analyze
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Streaming state */}
       {state === "streaming" && (
         <div>
+          {/* Extended thinking block (collapsible) */}
+          <ThinkingBlock text={thinkingText} isStreaming={true} />
+
           {toolEvents.length > 0 && (
             <div className="mb-3 space-y-1">
               <p className="text-xs text-slate-600 uppercase tracking-wider mb-1">Graph queries</p>
@@ -173,9 +226,14 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
               <span className="animate-pulse text-blue-400">▋</span>
             </div>
           )}
-          {!streamText && (
+          {!streamText && !thinkingText && (
             <div className="flex items-center gap-2 text-slate-500 text-sm">
               <span className="animate-spin">⟳</span> Gathering context from graph…
+            </div>
+          )}
+          {!streamText && thinkingText && (
+            <div className="flex items-center gap-2 text-slate-500 text-sm">
+              <span className="animate-pulse text-violet-400">✦</span> Reasoning…
             </div>
           )}
         </div>
@@ -197,14 +255,22 @@ export function AnalysisPanel({ nodeId, initialAnalysis }: Props) {
       {/* Idle state */}
       {state === "idle" && (
         <p className="text-slate-500 text-sm">
-          Click "Analyze with AI" to get an LLM-powered risk assessment, blast radius analysis,
+          Click &quot;Analyze with AI&quot; to get an LLM-powered risk assessment, blast radius analysis,
           and step-by-step remediation for this finding.
+          {enableThinking && (
+            <span className="ml-1 text-violet-400">
+              Extended thinking is enabled — Claude will reason step-by-step before responding.
+            </span>
+          )}
         </p>
       )}
 
       {/* Results */}
       {analysis && state === "done" && (
         <div className="space-y-6 mt-2">
+          {/* Thinking block (collapsible, collapsed by default after completion) */}
+          {thinkingText && <ThinkingBlock text={thinkingText} isStreaming={false} />}
+
           {/* Priority */}
           <div className="flex items-start gap-4">
             <PriorityBadge score={analysis.priority_score} />

@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     agent_model: str = "claude-opus-4-6"
     agent_max_tokens: int = 4096
+    agent_enable_thinking: bool = False
+    agent_thinking_budget_tokens: int = 8000
+
+    # Phase 3: CloudTrail polling (opt-in)
+    enable_cloudtrail_polling: bool = False
+    aws_account_id: str = ""          # required when enable_cloudtrail_polling=True
+    cloudtrail_poll_interval: int = 60  # seconds between polls
 
     @property
     def regions_list(self) -> list[str]:

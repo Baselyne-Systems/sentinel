@@ -214,6 +214,7 @@ export interface AnalysisResult {
 
 export type SSEEventType =
   | { event: "text_delta"; text: string }
+  | { event: "thinking_delta"; thinking: string }
   | { event: "tool_use"; tool_name: string; tool_input: Record<string, unknown>; tool_result_summary: string }
   | { event: "analysis_complete"; result: AnalysisResult }
   | { event: "error"; message: string };
@@ -230,10 +231,12 @@ export const agentApi = {
     nodeId: string,
     onEvent: (event: SSEEventType) => void,
     onDone?: () => void,
-    onError?: (err: Error) => void
+    onError?: (err: Error) => void,
+    options?: { thinking?: boolean }
   ): AbortController {
     const controller = new AbortController();
-    const url = `${API_V1}/agent/findings/${encodeURIComponent(nodeId)}/analyze`;
+    const qs = options?.thinking ? "?thinking=true" : "";
+    const url = `${API_V1}/agent/findings/${encodeURIComponent(nodeId)}/analyze${qs}`;
 
     fetch(url, { method: "POST", signal: controller.signal })
       .then(async (res) => {
@@ -285,6 +288,76 @@ export const agentApi = {
   /** Fetch a cached AnalysisResult (404 if not yet analyzed). */
   getAnalysis: (nodeId: string): Promise<AnalysisResult> =>
     apiFetch<AnalysisResult>(`/agent/findings/${encodeURIComponent(nodeId)}/analysis`),
+};
+
+// ── Remediation types ─────────────────────────────────────────────────────────
+
+export type RemediationAction =
+  | "s3_block_public_access"
+  | "s3_enable_versioning"
+  | "s3_enable_sse"
+  | "s3_enable_logging"
+  | "ec2_enable_ebs_encryption"
+  | "cloudtrail_enable"
+  | "cloudtrail_log_validation"
+  | "rds_disable_public_access";
+
+export type JobStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "executing"
+  | "completed"
+  | "failed";
+
+export interface RemediationProposal {
+  action: RemediationAction;
+  node_id: string;
+  resource_type: string;
+  account_id: string;
+  region: string;
+  description: string;
+  risk_reduction: string;
+  params: Record<string, string>;
+}
+
+export interface RemediationJob {
+  job_id: string;
+  proposal: RemediationProposal;
+  status: JobStatus;
+  proposed_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  executed_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+  output: Record<string, unknown> | null;
+}
+
+// ── Remediation endpoints ─────────────────────────────────────────────────────
+
+export const remediationApi = {
+  propose: (nodeId: string): Promise<RemediationJob[]> =>
+    apiFetch<RemediationJob[]>("/remediation/propose", {
+      method: "POST",
+      body: JSON.stringify({ node_id: nodeId }),
+    }),
+
+  list: (): Promise<RemediationJob[]> =>
+    apiFetch<RemediationJob[]>("/remediation/"),
+
+  get: (jobId: string): Promise<RemediationJob> =>
+    apiFetch<RemediationJob>(`/remediation/${encodeURIComponent(jobId)}`),
+
+  approve: (jobId: string): Promise<RemediationJob> =>
+    apiFetch<RemediationJob>(`/remediation/${encodeURIComponent(jobId)}/approve`, {
+      method: "POST",
+    }),
+
+  reject: (jobId: string): Promise<RemediationJob> =>
+    apiFetch<RemediationJob>(`/remediation/${encodeURIComponent(jobId)}/reject`, {
+      method: "POST",
+    }),
 };
 
 // ── Account endpoints ─────────────────────────────────────────────────────────

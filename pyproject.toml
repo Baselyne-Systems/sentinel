@@ -4,6 +4,7 @@ members = [
     "packages/perception",
     "packages/api",
     "packages/agent",
+    "packages/remediation",
 ]
 
 [tool.uv]
@@ -19,10 +20,13 @@ dev-dependencies = [
     "testcontainers[neo4j]>=4.8",  # E2E tests: real Neo4j in Docker
     "pytest-timeout>=2.3",         # prevent E2E tests hanging indefinitely
     "anthropic>=0.40",             # for mocking in agent tests
+    "pytest-benchmark>=4.0",       # performance benchmark suite
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning",
@@ -30,6 +34,7 @@ filterwarnings = [
 markers = [
     "e2e: marks tests as end-to-end (requires Docker, run with: pytest -m e2e)",
     "slow: marks tests that take more than 5 seconds",
+    "benchmark: marks performance benchmark tests (requires Docker, run with: make bench)",
 ]
 
 [tool.ruff]

@@ -101,7 +101,7 @@ CIS_1_5 = CISRule(
     resource_types=[ResourceType.IAM_USER],
     cypher_check="""
     MATCH (u:IAMUser {has_console_access: true})
-    WHERE NOT exists(u.password_policy_uppercase) OR u.password_policy_uppercase = false
+    WHERE u.password_policy_uppercase IS NULL OR u.password_policy_uppercase = false
     RETURN u.node_id AS node_id, u.name AS name
     LIMIT 1
     """,

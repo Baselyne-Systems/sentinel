@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,6 +30,12 @@ class GraphEdge(BaseModel):
     def to_neo4j_props(self) -> dict[str, Any]:
         data = self.model_dump(mode="json")
         data["created_at"] = self.created_at.isoformat()
+        # Neo4j only accepts primitives; serialize any dict / list-of-dict fields.
+        for key, value in list(data.items()):
+            if isinstance(value, dict):
+                data[key] = json.dumps(value)
+            elif isinstance(value, list) and value and isinstance(value[0], dict):
+                data[key] = json.dumps(value)
         return data
 
 

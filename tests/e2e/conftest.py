@@ -22,6 +22,7 @@ from typing import Generator
 import pytest
 import pytest_asyncio
 
+from sentinel_api.deps import set_neo4j_client
 from sentinel_core.graph.client import Neo4jClient
 
 # ── Neo4j container ───────────────────────────────────────────────────────────
@@ -53,8 +54,7 @@ def neo4j_container():
         pytest.skip("testcontainers[neo4j] not installed. Run: uv sync")
 
     try:
-        container = Neo4jContainer(image="neo4j:5-community")
-        container.with_env("NEO4J_AUTH", "neo4j/sentinel_test")
+        container = Neo4jContainer(image="neo4j:5-community", password="sentinel_test")
         container.start()
         yield container
         container.stop()
@@ -92,6 +92,8 @@ async def neo4j_client(neo4j_bolt_url) -> Neo4jClient:
     await client.ensure_indexes()
     yield client
     await client.close()
+    # Reset global singleton so integration tests (TestClient) start clean
+    set_neo4j_client(None)  # type: ignore[arg-type]
 
 
 @pytest_asyncio.fixture(scope="function")

@@ -78,6 +78,7 @@ def _make_text_chunk(text: str):
     chunk = MagicMock()
     chunk.type = "content_block_delta"
     chunk.delta = MagicMock()
+    chunk.delta.type = "text_delta"
     chunk.delta.text = text
     return chunk
 
@@ -142,11 +143,11 @@ async def test_analyze_finding_full_pipeline(clean_db: Neo4jClient, agent_settin
         node_id="s3-public-test-bucket",
         account_id="123456789012",
         region="us-east-1",
-        bucket_name="public-test-bucket",
+        name="public-test-bucket",
         is_public=True,
-        versioning_enabled=False,
-        encrypted=False,
-        posture_flags=["CRITICAL", "S3_PUBLIC_ACL", "S3_NO_VERSIONING"],
+        versioning=False,
+        encryption=False,
+        posture_flags=["CRITICAL", "S3_PUBLIC_ACCESS", "S3_NO_VERSIONING"],
     )
     await neo4j.upsert_node(bucket)
 
@@ -222,7 +223,7 @@ async def test_analyze_finding_sse_wire_format(clean_db: Neo4jClient, agent_sett
         account_id="123456789012",
         region="us-east-1",
         group_id="sg-123",
-        group_name="open-sg",
+        name="open-sg",
         vpc_id="vpc-1",
         posture_flags=["CRITICAL", "SG_OPEN_SSH"],
     )
@@ -273,9 +274,9 @@ async def test_generate_brief_with_findings(clean_db: Neo4jClient, agent_setting
         node_id="s3-brief-test",
         account_id="999999999999",
         region="us-east-1",
-        bucket_name="brief-test",
+        name="brief-test",
         is_public=True,
-        posture_flags=["CRITICAL", "S3_PUBLIC_ACL"],
+        posture_flags=["CRITICAL", "S3_PUBLIC_ACCESS"],
     )
     await neo4j.upsert_node(bucket)
 

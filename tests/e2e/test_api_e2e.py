@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from sentinel_api.deps import set_neo4j_client
 from sentinel_api.main import create_app
@@ -42,10 +42,10 @@ pytestmark = pytest.mark.e2e
 # ── App fixture — one per test, avoids lifespan touching a separate Neo4j ──────
 
 
-@pytest.fixture()
-def app_client(neo4j_client: Neo4jClient):
+@pytest_asyncio.fixture()
+async def app_client(neo4j_client: Neo4jClient):
     """
-    Return a TestClient whose app uses the real testcontainers Neo4j.
+    Return an AsyncClient whose app uses the real testcontainers Neo4j.
 
     We create a bare ``create_app()`` instance (without lifespan) and inject
     the already-connected ``neo4j_client`` fixture via ``set_neo4j_client()``.
@@ -54,8 +54,9 @@ def app_client(neo4j_client: Neo4jClient):
     """
     set_neo4j_client(neo4j_client)
     fastapi_app = create_app()
-    # Disable lifespan so we control the client ourselves
-    with TestClient(fastapi_app, raise_server_exceptions=True) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=fastapi_app), base_url="http://test"
+    ) as client:
         yield client
 
 
@@ -92,9 +93,9 @@ async def populated_db(
 # ── /health ────────────────────────────────────────────────────────────────────
 
 
-def test_health_endpoint(app_client):
+async def test_health_endpoint(app_client):
     """GET /health returns 200 with status=ok."""
-    response = app_client.get("/health")
+    response = await app_client.get("/health")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
@@ -109,7 +110,7 @@ def test_health_endpoint(app_client):
 async def test_list_nodes_returns_data(populated_db, app_client):
     """GET /api/v1/graph/nodes should return all nodes after a scan."""
     set_neo4j_client(populated_db)
-    response = app_client.get("/api/v1/graph/nodes", params={"account_id": ACCOUNT_ID})
+    response = await app_client.get("/api/v1/graph/nodes", params={"account_id": ACCOUNT_ID})
     assert response.status_code == 200
     nodes = response.json()
     assert isinstance(nodes, list)
@@ -121,7 +122,7 @@ async def test_list_nodes_returns_data(populated_db, app_client):
 async def test_list_nodes_filter_by_type(populated_db, app_client):
     """GET /api/v1/graph/nodes?type=S3Bucket returns only S3 nodes."""
     set_neo4j_client(populated_db)
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/graph/nodes",
         params={"type": "S3Bucket", "account_id": ACCOUNT_ID},
     )
@@ -138,13 +139,17 @@ async def test_list_nodes_pagination(populated_db, app_client):
     """Pagination (limit/offset) should return non-overlapping pages."""
     set_neo4j_client(populated_db)
 
-    page1 = app_client.get(
-        "/api/v1/graph/nodes",
-        params={"account_id": ACCOUNT_ID, "limit": 2, "offset": 0},
+    page1 = (
+        await app_client.get(
+            "/api/v1/graph/nodes",
+            params={"account_id": ACCOUNT_ID, "limit": 2, "offset": 0},
+        )
     ).json()
-    page2 = app_client.get(
-        "/api/v1/graph/nodes",
-        params={"account_id": ACCOUNT_ID, "limit": 2, "offset": 2},
+    page2 = (
+        await app_client.get(
+            "/api/v1/graph/nodes",
+            params={"account_id": ACCOUNT_ID, "limit": 2, "offset": 2},
+        )
     ).json()
 
     p1_ids = {n.get("node_id") for n in page1 if n.get("node_id")}
@@ -159,7 +164,7 @@ async def test_list_nodes_pagination(populated_db, app_client):
 async def test_list_nodes_empty_account(clean_db, app_client):
     """GET /api/v1/graph/nodes for an unknown account returns an empty list."""
     set_neo4j_client(clean_db)
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/graph/nodes",
         params={"account_id": "999999999999"},
     )
@@ -177,7 +182,7 @@ async def test_get_node_by_id(populated_db, app_client, public_s3_bucket):
     set_neo4j_client(populated_db)
     node_id = f"s3-{public_s3_bucket}"
 
-    response = app_client.get(f"/api/v1/graph/nodes/{node_id}")
+    response = await app_client.get(f"/api/v1/graph/nodes/{node_id}")
     assert response.status_code == 200
 
     body = response.json()
@@ -192,7 +197,7 @@ async def test_get_node_by_id(populated_db, app_client, public_s3_bucket):
 async def test_get_node_404_for_missing_node(clean_db, app_client):
     """GET /api/v1/graph/nodes/{node_id} returns 404 when node is absent."""
     set_neo4j_client(clean_db)
-    response = app_client.get("/api/v1/graph/nodes/nonexistent-node-xyz")
+    response = await app_client.get("/api/v1/graph/nodes/nonexistent-node-xyz")
     assert response.status_code == 404
 
 
@@ -205,7 +210,7 @@ async def test_get_node_includes_posture_flags(
     set_neo4j_client(populated_db)
     node_id = f"s3-{public_s3_bucket}"
 
-    response = app_client.get(f"/api/v1/graph/nodes/{node_id}")
+    response = await app_client.get(f"/api/v1/graph/nodes/{node_id}")
     assert response.status_code == 200
 
     body = response.json()
@@ -226,7 +231,7 @@ async def test_get_neighbors_returns_subgraph(
     """GET /api/v1/graph/nodes/{id}/neighbors returns subgraph structure."""
     set_neo4j_client(populated_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         f"/api/v1/graph/nodes/{vpc_id}/neighbors",
         params={"depth": 1},
     )
@@ -248,7 +253,7 @@ async def test_get_neighbors_depth_2_reaches_sg(
     """Depth-2 traversal from EC2 should reach the security group."""
     set_neo4j_client(populated_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         f"/api/v1/graph/nodes/{ec2_instance_id}/neighbors",
         params={"depth": 2},
     )
@@ -272,7 +277,7 @@ async def test_get_findings_returns_violations(populated_db, app_client):
     """GET /api/v1/posture/findings should return CIS violations."""
     set_neo4j_client(populated_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/posture/findings",
         params={"account_id": ACCOUNT_ID},
     )
@@ -288,7 +293,7 @@ async def test_get_findings_filter_by_severity(populated_db, app_client):
     """GET /api/v1/posture/findings?severity=CRITICAL should only return CRITICAL findings."""
     set_neo4j_client(populated_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/posture/findings",
         params={"account_id": ACCOUNT_ID, "severity": "CRITICAL"},
     )
@@ -307,7 +312,7 @@ async def test_get_findings_filter_by_resource_type(populated_db, app_client):
     """GET /api/v1/posture/findings?resource_type=S3Bucket should only return S3 findings."""
     set_neo4j_client(populated_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/posture/findings",
         params={"account_id": ACCOUNT_ID, "resource_type": "S3Bucket"},
     )
@@ -326,7 +331,7 @@ async def test_get_findings_empty_db(clean_db, app_client):
     """GET /api/v1/posture/findings on an empty graph returns an empty list."""
     set_neo4j_client(clean_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/posture/findings",
         params={"account_id": ACCOUNT_ID},
     )
@@ -343,7 +348,7 @@ async def test_get_posture_summary_with_violations(populated_db, app_client):
     """GET /api/v1/posture/summary should reflect real violation counts."""
     set_neo4j_client(populated_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/posture/summary",
         params={"account_id": ACCOUNT_ID},
     )
@@ -369,7 +374,7 @@ async def test_get_posture_summary_empty_db(clean_db, app_client):
     """GET /api/v1/posture/summary on an empty graph returns zero counts."""
     set_neo4j_client(clean_db)
 
-    response = app_client.get(
+    response = await app_client.get(
         "/api/v1/posture/summary",
         params={"account_id": ACCOUNT_ID},
     )
@@ -383,12 +388,12 @@ async def test_get_posture_summary_empty_db(clean_db, app_client):
 # ── GET /api/v1/posture/rules ─────────────────────────────────────────────────
 
 
-def test_list_rules_returns_all_cis_rules(app_client, neo4j_client):
+async def test_list_rules_returns_all_cis_rules(app_client, neo4j_client):
     """GET /api/v1/posture/rules should return all loaded CIS rules."""
     from sentinel_core.knowledge.rules import ALL_RULES
 
     set_neo4j_client(neo4j_client)
-    response = app_client.get("/api/v1/posture/rules")
+    response = await app_client.get("/api/v1/posture/rules")
     assert response.status_code == 200
 
     rules = response.json()
@@ -404,10 +409,10 @@ def test_list_rules_returns_all_cis_rules(app_client, neo4j_client):
         assert "remediation_hint" in rule
 
 
-def test_list_rules_severity_values(app_client, neo4j_client):
+async def test_list_rules_severity_values(app_client, neo4j_client):
     """All returned rules should have valid severity values."""
     set_neo4j_client(neo4j_client)
-    response = app_client.get("/api/v1/posture/rules")
+    response = await app_client.get("/api/v1/posture/rules")
     assert response.status_code == 200
 
     valid_severities = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
@@ -420,10 +425,10 @@ def test_list_rules_severity_values(app_client, neo4j_client):
 # ── POST /api/v1/graph/query (raw Cypher) ─────────────────────────────────────
 
 
-def test_raw_cypher_disabled_by_default(app_client, neo4j_client):
+async def test_raw_cypher_disabled_by_default(app_client, neo4j_client):
     """POST /api/v1/graph/query returns 403 when ENABLE_RAW_CYPHER is not set."""
     set_neo4j_client(neo4j_client)
-    response = app_client.post(
+    response = await app_client.post(
         "/api/v1/graph/query",
         json={"cypher": "MATCH (n) RETURN n LIMIT 1"},
     )
@@ -438,7 +443,7 @@ async def test_raw_cypher_enabled_executes_query(populated_db, app_client):
 
     with patch("sentinel_api.routers.graph.get_settings") as mock_settings:
         mock_settings.return_value.enable_raw_cypher = True
-        response = app_client.post(
+        response = await app_client.post(
             "/api/v1/graph/query",
             json={
                 "cypher": "MATCH (n:AWSAccount {account_id: $account_id}) RETURN n.account_id AS id",
@@ -457,11 +462,11 @@ async def test_raw_cypher_enabled_executes_query(populated_db, app_client):
 # ── POST /api/v1/accounts ─────────────────────────────────────────────────────
 
 
-def test_register_account(app_client, neo4j_client):
+async def test_register_account(app_client, neo4j_client):
     """POST /api/v1/accounts should register a new account."""
     set_neo4j_client(neo4j_client)
 
-    response = app_client.post(
+    response = await app_client.post(
         "/api/v1/accounts",
         json={
             "account_id": "111122223333",
@@ -476,11 +481,11 @@ def test_register_account(app_client, neo4j_client):
     assert body["name"] == "test-account"
 
 
-def test_register_account_invalid_id(app_client, neo4j_client):
+async def test_register_account_invalid_id(app_client, neo4j_client):
     """POST /api/v1/accounts with a non-12-digit account_id should return 422."""
     set_neo4j_client(neo4j_client)
 
-    response = app_client.post(
+    response = await app_client.post(
         "/api/v1/accounts",
         json={
             "account_id": "bad-id",
@@ -490,11 +495,11 @@ def test_register_account_invalid_id(app_client, neo4j_client):
     assert response.status_code == 422
 
 
-def test_list_accounts_empty(app_client, neo4j_client):
+async def test_list_accounts_empty(app_client, neo4j_client):
     """GET /api/v1/accounts returns empty list when none registered."""
     set_neo4j_client(neo4j_client)
 
-    response = app_client.get("/api/v1/accounts")
+    response = await app_client.get("/api/v1/accounts")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
@@ -502,11 +507,11 @@ def test_list_accounts_empty(app_client, neo4j_client):
 # ── POST /api/v1/scan/trigger ─────────────────────────────────────────────────
 
 
-def test_scan_trigger_returns_job_id(app_client, neo4j_client):
+async def test_scan_trigger_returns_job_id(app_client, neo4j_client):
     """POST /api/v1/scan/trigger should return a job_id."""
     set_neo4j_client(neo4j_client)
 
-    response = app_client.post(
+    response = await app_client.post(
         "/api/v1/scan/trigger",
         json={"account_id": ACCOUNT_ID, "regions": [REGION]},
     )
@@ -516,22 +521,22 @@ def test_scan_trigger_returns_job_id(app_client, neo4j_client):
     assert body["status"] in ("queued", "running", "started")
 
 
-def test_scan_status_for_unknown_job(app_client, neo4j_client):
+async def test_scan_status_for_unknown_job(app_client, neo4j_client):
     """GET /api/v1/scan/{job_id}/status for unknown job should return 404."""
     set_neo4j_client(neo4j_client)
 
-    response = app_client.get("/api/v1/scan/nonexistent-job-abc/status")
+    response = await app_client.get("/api/v1/scan/nonexistent-job-abc/status")
     assert response.status_code == 404
 
 
 # ── OpenAPI spec correctness ───────────────────────────────────────────────────
 
 
-def test_openapi_schema_accessible(app_client, neo4j_client):
+async def test_openapi_schema_accessible(app_client, neo4j_client):
     """GET /openapi.json should return a valid OpenAPI schema."""
     set_neo4j_client(neo4j_client)
 
-    response = app_client.get("/openapi.json")
+    response = await app_client.get("/openapi.json")
     assert response.status_code == 200
     schema = response.json()
     assert schema["info"]["title"] == "SENTINEL API"
