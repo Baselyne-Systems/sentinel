@@ -1,0 +1,17 @@
+[project]
+name = "sentinel-perception"
+version = "0.1.0"
+description = "SENTINEL perception: AWS connectors, graph builder, CloudTrail poller"
+requires-python = ">=3.12"
+dependencies = [
+    "sentinel-core",
+    "boto3>=1.34",
+    "botocore>=1.34",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sentinel_perception"]

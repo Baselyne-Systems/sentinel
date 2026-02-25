@@ -1,0 +1,17 @@
+[project]
+name = "sentinel-core"
+version = "0.1.0"
+description = "SENTINEL core: graph schema, Neo4j client, CIS knowledge base"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "neo4j>=5.20",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sentinel_core"]
