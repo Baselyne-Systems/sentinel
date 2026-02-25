@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { postureApi, type Finding, type Severity } from "@/lib/api";
 import { FindingCard } from "@/components/posture/FindingCard";
 
@@ -19,6 +20,7 @@ const RESOURCE_TYPES = [
 ];
 
 export default function FindingsPage() {
+  const router = useRouter();
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
   const [severityFilter, setSeverityFilter] = useState<Severity | "">("");
@@ -98,7 +100,13 @@ export default function FindingsPage() {
       ) : (
         <div className="flex flex-col gap-2 max-w-3xl">
           {findings.map((f) => (
-            <FindingCard key={f.node_id + f.severity} finding={f} />
+            <div
+              key={f.node_id + f.severity}
+              onClick={() => router.push(`/findings/${encodeURIComponent(f.node_id)}`)}
+              className="cursor-pointer"
+            >
+              <FindingCard finding={f} />
+            </div>
           ))}
         </div>
       )}

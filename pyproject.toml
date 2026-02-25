@@ -3,6 +3,7 @@ members = [
     "packages/core",
     "packages/perception",
     "packages/api",
+    "packages/agent",
 ]
 
 [tool.uv]
@@ -17,6 +18,7 @@ dev-dependencies = [
     "httpx>=0.27",           # for FastAPI TestClient async support
     "testcontainers[neo4j]>=4.8",  # E2E tests: real Neo4j in Docker
     "pytest-timeout>=2.3",         # prevent E2E tests hanging indefinitely
+    "anthropic>=0.40",             # for mocking in agent tests
 ]
 
 [tool.pytest.ini_options]

@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     enable_raw_cypher: bool = False
 
-    # Phase 2 (reserved)
+    # Phase 2: Agent
     anthropic_api_key: str = ""
+    agent_model: str = "claude-opus-4-6"
+    agent_max_tokens: int = 4096
 
     @property
     def regions_list(self) -> list[str]:

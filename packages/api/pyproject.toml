@@ -6,10 +6,16 @@ requires-python = ">=3.12"
 dependencies = [
     "sentinel-core",
     "sentinel-perception",
+    "sentinel-agent",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
 ]
+
+[tool.uv.sources]
+sentinel-core = { workspace = true }
+sentinel-perception = { workspace = true }
+sentinel-agent = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

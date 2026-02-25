@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sentinel_api import __version__
 from sentinel_api.config import get_settings
 from sentinel_api.deps import set_neo4j_client
-from sentinel_api.routers import accounts, graph, posture, scan
+from sentinel_api.routers import accounts, agent, graph, posture, scan
 from sentinel_core.graph.client import Neo4jClient
 
 logger = logging.getLogger(__name__)
@@ -114,6 +114,13 @@ def create_app() -> FastAPI:
         license_info={"name": "MIT"},
         openapi_tags=[
             {
+                "name": "agent",
+                "description": (
+                    "LLM-powered security analysis. Streams structured analysis for findings "
+                    "via Server-Sent Events. Results are cached in Neo4j."
+                ),
+            },
+            {
                 "name": "graph",
                 "description": (
                     "Query the environment graph. All discovered AWS resources are nodes; "
@@ -155,6 +162,7 @@ def create_app() -> FastAPI:
 
     # Routers
     PREFIX = "/api/v1"
+    app.include_router(agent.router, prefix=PREFIX)
     app.include_router(graph.router, prefix=PREFIX)
     app.include_router(posture.router, prefix=PREFIX)
     app.include_router(scan.router, prefix=PREFIX)
