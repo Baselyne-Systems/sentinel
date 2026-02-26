@@ -52,35 +52,24 @@ MATCH (n) WHERE 'CRITICAL' IN n.posture_flags RETURN n
 
 The **posture evaluator** produces flags by running CIS rules after each scan. The **findings view** in the UI is just nodes where `posture_flags` is non-empty. The **agent** reads flags to decide what to analyze. The **remediation planner** reads flags to decide what to fix. Posture is the shared language that connects all four packages.
 
-```
-AWS Account
-    │ boto3 discovery
-    ▼
-sentinel-perception ──────────────────────────────────────┐
-    │ GraphBuilder.full_scan()                            │
-    │  ├─ EC2/SG/VPC/Subnet per region                   │
-    │  ├─ Lambda per region                               │
-    │  ├─ RDS per region                                  │
-    │  ├─ IAM (global)                                    │
-    │  └─ S3 (global)                                     │
-    │                                                     │
-    │ upsert nodes + edges (MERGE on node_id)             │
-    ▼                                                     │
-Neo4j Graph DB ◄──────────────────────────────────────────┘
-    │
-    ├── sentinel-core (client, queries, CIS evaluator)
-    │   ↳ stamps posture_flags on violating nodes after each scan
-    │
-    ├── sentinel-agent (read-only Cypher tools → Claude → analysis cached on node)
-    │
-    └── sentinel-remediation (planner reads flags → executor writes outcomes)
+```mermaid
+flowchart TD
+    AWS["AWS Account"]
+    PERC["sentinel-perception<br/>GraphBuilder.full_scan()<br/>• EC2 / SG / VPC / Subnet — per region<br/>• Lambda — per region<br/>• RDS — per region<br/>• IAM — global<br/>• S3 — global"]
+    NEO[("Neo4j Graph DB")]
+    CORE["sentinel-core<br/>client · queries · CIS evaluator<br/>↳ stamps posture_flags on violating nodes"]
+    AGENT["sentinel-agent<br/>read-only Cypher tools → Claude<br/>↳ caches AnalysisResult on node"]
+    REMED["sentinel-remediation<br/>planner reads flags<br/>↳ executor writes outcomes back"]
+    API["sentinel-api<br/>FastAPI — REST + SSE"]
+    FE["Next.js Frontend<br/>Dashboard · Graph Explorer<br/>Findings · Remediations"]
 
-sentinel-api (FastAPI) orchestrates all four packages
-    ├─ REST endpoints ──────────────────────────────────► Next.js Frontend
-    └─ SSE streams                                          ├─ Dashboard
-                                                            ├─ Graph Explorer
-                                                            ├─ Findings
-                                                            └─ Remediations
+    AWS -->|"boto3 discovery"| PERC
+    PERC -->|"upsert nodes + edges<br/>(MERGE on node_id)"| NEO
+    CORE <-->|"reads / writes"| NEO
+    AGENT -->|"read-only queries + cache analysis"| NEO
+    REMED -->|"read flags · write outcomes"| NEO
+    API --> CORE & PERC & AGENT & REMED
+    API -->|"REST + SSE"| FE
 ```
 
 ---
@@ -107,12 +96,21 @@ Brief definitions for terms used throughout this document.
 
 The repo is a **uv workspace** (`pyproject.toml` at root). Five Python packages:
 
-```
-sentinel-api             ← imports everything below
-  ├─ sentinel-core       ← no internal deps
-  ├─ sentinel-perception ← depends on sentinel-core
-  ├─ sentinel-agent      ← depends on sentinel-core
-  └─ sentinel-remediation ← depends on sentinel-core
+```mermaid
+graph TD
+    API[sentinel-api]
+    CORE[sentinel-core]
+    PERC[sentinel-perception]
+    AGENT[sentinel-agent]
+    REMED[sentinel-remediation]
+
+    API --> CORE
+    API --> PERC
+    API --> AGENT
+    API --> REMED
+    PERC --> CORE
+    AGENT --> CORE
+    REMED --> CORE
 ```
 
 Each package has its own `pyproject.toml` with `[tool.uv.sources]` workspace references.
@@ -713,10 +711,17 @@ The `AnalysisResult` cached on the Neo4j node (`n.agent_analysis`) is identical 
 
 **`JobStatus`** state machine:
 
-```
-PENDING ──► APPROVED ──► EXECUTING ──► COMPLETED
-   │                                       │
-   └───────────────► REJECTED              └──► FAILED
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> APPROVED
+    PENDING --> REJECTED
+    APPROVED --> EXECUTING
+    EXECUTING --> COMPLETED
+    EXECUTING --> FAILED
+    COMPLETED --> [*]
+    FAILED --> [*]
+    REJECTED --> [*]
 ```
 
 **`RemediationJob`** carries the full lifecycle:
