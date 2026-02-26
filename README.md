@@ -19,21 +19,21 @@ SENTINEL builds a live graph of your cloud environment, evaluates every resource
 
 ```mermaid
 graph TD
-    AWS["AWS Account\n(EC2 · IAM · S3 · RDS · Lambda · VPC · CloudTrail)"]
-    PERC["sentinel-perception\nGraphBuilder — 5 AWS connectors\nboto3 + asyncio.to_thread"]
-    NEO4J[("Neo4j 5\nGraph DB\nbolt://localhost:7687")]
-    CORE["sentinel-core\nPydantic schema · Neo4j client\nCIS rules (~30) · PostureEvaluator"]
-    AGENT["sentinel-agent\nClaude claude-opus-4-6\ntool-use loop · SSE streaming\nextended thinking (opt-in)"]
-    REMED["sentinel-remediation\nRemediationPlanner\nRemediationExecutor · 8 remediators"]
-    API["sentinel-api\nFastAPI · 6 routers\nrate limiting · API key auth\nSQLite job store"]
-    FRONTEND["Next.js Frontend\nDashboard · Graph Explorer\nFindings · Scans · Remediations"]
+    AWS["AWS Account<br/>(EC2 · IAM · S3 · RDS · Lambda · VPC · CloudTrail)"]
+    PERC["sentinel-perception<br/>GraphBuilder — 5 AWS connectors<br/>boto3 + asyncio.to_thread"]
+    NEO4J[("Neo4j 5<br/>Graph DB<br/>bolt://localhost:7687")]
+    CORE["sentinel-core<br/>Pydantic schema · Neo4j client<br/>CIS rules (~30) · PostureEvaluator"]
+    AGENT["sentinel-agent<br/>Claude claude-opus-4-6<br/>tool-use loop · SSE streaming<br/>extended thinking (opt-in)"]
+    REMED["sentinel-remediation<br/>RemediationPlanner<br/>RemediationExecutor · 8 remediators"]
+    API["sentinel-api<br/>FastAPI · 6 routers<br/>rate limiting · API key auth<br/>SQLite job store"]
+    FRONTEND["Next.js Frontend<br/>Dashboard · Graph Explorer<br/>Findings · Scans · Remediations"]
 
     AWS -->|"boto3 discovery"| PERC
-    PERC -->|"upsert nodes + edges\n(MERGE on node_id)"| NEO4J
+    PERC -->|"upsert nodes + edges"| NEO4J
     CORE <-->|"Cypher read/write"| NEO4J
     AGENT -->|"graph tool queries"| NEO4J
     AGENT -->|"cache AnalysisResult"| NEO4J
-    REMED -->|"read posture_flags\nwrite remediated_at"| NEO4J
+    REMED -->|"read/write posture data"| NEO4J
     API --> CORE
     API --> PERC
     API --> AGENT
