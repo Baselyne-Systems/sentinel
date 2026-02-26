@@ -3,9 +3,9 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 # Install all dependencies (dev deps needed for Next.js build).
-RUN npm install
+RUN npm ci
 
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────────
@@ -43,7 +43,6 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
 # Copy the standalone server bundle.
-COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
