@@ -144,7 +144,9 @@ def _make_backend(tool_round: bool = False, final_response: str | None = None) -
             TextChunk(text="Analyzing..."),
             TurnComplete(
                 text="Analyzing...",
-                tool_calls=[ToolCallChunk(id="tu-1", name="get_resource", arguments={"node_id": "s3-test"})],
+                tool_calls=[
+                    ToolCallChunk(id="tu-1", name="get_resource", arguments={"node_id": "s3-test"})
+                ],
                 stop_reason="tool_use",
             ),
         ]

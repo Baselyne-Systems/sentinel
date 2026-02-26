@@ -528,7 +528,9 @@ class SentinelAgent:
                             elif parsed is None:
                                 summary = "No result found"
                             else:
-                                summary = f"Returned resource: {parsed.get('resource_type', 'node')}"
+                                summary = (
+                                    f"Returned resource: {parsed.get('resource_type', 'node')}"
+                                )
                         except Exception:
                             summary = "Result received"
 

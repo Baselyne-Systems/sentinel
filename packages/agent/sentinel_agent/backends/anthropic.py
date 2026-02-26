@@ -117,9 +117,7 @@ class AnthropicBackend:
 
     # ── Message format translation ─────────────────────────────────────────────
 
-    def _to_anthropic_messages(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _to_anthropic_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Convert OpenAI-format messages to Anthropic format.
 
@@ -155,9 +153,7 @@ class AnthropicBackend:
                         fn = tc["function"]
                         raw_args = fn.get("arguments", "{}")
                         parsed_args = (
-                            json.loads(raw_args)
-                            if isinstance(raw_args, str)
-                            else raw_args
+                            json.loads(raw_args) if isinstance(raw_args, str) else raw_args
                         )
                         content.append(
                             {

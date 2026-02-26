@@ -70,9 +70,7 @@ class OpenAIBackend:
         ``enable_thinking`` and ``thinking_budget_tokens`` are silently ignored
         (extended thinking is an Anthropic-only feature).
         """
-        all_msgs: list[dict[str, Any]] = [
-            {"role": "system", "content": system}
-        ] + messages
+        all_msgs: list[dict[str, Any]] = [{"role": "system", "content": system}] + messages
 
         raw_stream = await self._client.chat.completions.create(
             model=self._model,
@@ -97,9 +95,7 @@ class OpenAIBackend:
                 yield TextChunk(text=delta.content)
             if delta.tool_calls:
                 for tc in delta.tool_calls:
-                    slot = raw_calls.setdefault(
-                        tc.index, {"id": "", "name": "", "args": ""}
-                    )
+                    slot = raw_calls.setdefault(tc.index, {"id": "", "name": "", "args": ""})
                     if tc.id:
                         slot["id"] = tc.id
                     if tc.function and tc.function.name:
@@ -108,9 +104,7 @@ class OpenAIBackend:
                         slot["args"] += tc.function.arguments
 
         finish = (
-            last_chunk.choices[0].finish_reason
-            if last_chunk and last_chunk.choices
-            else "stop"
+            last_chunk.choices[0].finish_reason if last_chunk and last_chunk.choices else "stop"
         )
         tool_calls = [
             ToolCallChunk(
