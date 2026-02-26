@@ -39,8 +39,8 @@ logging.basicConfig(
 _OPENAPI_DESCRIPTION = """
 ## SENTINEL — Autonomous Cloud Security Architect
 
-SENTINEL builds a live graph of your AWS environment and continuously evaluates
-it against the **CIS AWS Foundations Benchmark v1.5**.
+SENTINEL builds a live graph of your AWS environment and evaluates
+it against the **CIS AWS Foundations Benchmark v1.5** on demand.
 
 ### Core concepts
 

@@ -1,6 +1,6 @@
 # SENTINEL
 
-**Autonomous cloud security architect** — continuously discovers, evaluates, and remediates security vulnerabilities in AWS infrastructure.
+**Autonomous cloud security architect** — discovers, evaluates, and remediates security vulnerabilities in AWS infrastructure on demand.
 
 SENTINEL builds a live graph of your cloud environment, evaluates every resource against the CIS AWS Foundations Benchmark v1.5 (a set of security configuration guidelines from the Center for Internet Security), streams AI-powered risk analysis, and executes safe reversible remediations with human approval.
 

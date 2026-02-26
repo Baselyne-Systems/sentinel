@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-SENTINEL is an autonomous cloud security architect agent that continuously observes, reasons about, and remediates security vulnerabilities in cloud infrastructure. It builds a live graph of the cloud environment, evaluates it against security benchmarks (CIS, NIST, SOC 2), and surfaces findings with actionable remediation guidance.
+SENTINEL is an autonomous cloud security architect agent that observes, reasons about, and remediates security vulnerabilities in cloud infrastructure on demand. It builds a live graph of the cloud environment, evaluates it against security benchmarks (CIS, NIST, SOC 2), and surfaces findings with actionable remediation guidance.
 
 **Phase 1 Goal:** Prove SENTINEL can accurately model a real AWS cloud environment as a navigable graph with security posture annotations.
 

@@ -24,13 +24,15 @@ This document describes the full system architecture: every package, every compo
 
 ## 1. System Overview
 
-SENTINEL is an autonomous cloud security architect. It continuously:
+SENTINEL is an autonomous cloud security architect. On demand it:
 
 1. **Observes** — discovers every resource in an AWS account via boto3
 2. **Models** — writes all resources and their relationships into a Neo4j graph
 3. **Evaluates** — checks every node against ~30 CIS AWS Benchmark v1.5 rules; stamps violations as posture flags directly on nodes
 4. **Reasons** — uses Claude (claude-opus-4-6) with read-only graph tools to produce a structured risk analysis for any flagged node
 5. **Remediates** — proposes and (with human approval) executes safe, reversible AWS changes to close the gaps
+
+Change detection runs continuously in the background when `ENABLE_CLOUDTRAIL_POLLING=true`: the CloudTrail poller watches for resource mutations every 60 seconds and triggers targeted re-scans of affected resources without requiring a full account scan.
 
 The graph is the single source of truth. Everything — posture flags, analysis results, remediation outcomes — lives as properties on graph nodes.
 
@@ -428,7 +430,7 @@ The `Semaphore(20)` bounds prevent overwhelming Neo4j with concurrent writes. No
 
 ### 4.4 CloudTrailPoller
 
-Not yet integrated into scans (Phase future). Polls `cloudtrail.lookup_events()` every 60 seconds. Watches for mutation events: `CreateBucket`, `AuthorizeSecurityGroupIngress`, `AttachRolePolicy`, `ModifyDBInstance`, etc. Intended for incremental graph updates — when a mutation event fires, only re-scan the affected resource rather than a full account scan.
+Opt-in background change-detection (`ENABLE_CLOUDTRAIL_POLLING=true`, requires `AWS_ACCOUNT_ID`). Polls `cloudtrail.lookup_events()` every 60 seconds (configurable via `CLOUDTRAIL_POLL_INTERVAL`). Watches for ~30 resource-mutating event types: `CreateBucket`, `AuthorizeSecurityGroupIngress`, `AttachRolePolicy`, `ModifyDBInstance`, etc. When a mutation event fires, calls `GraphBuilder.targeted_scan()` to re-scan only the affected resource type rather than the full account. Does not automatically trigger agent analysis after a targeted scan.
 
 ---
 
