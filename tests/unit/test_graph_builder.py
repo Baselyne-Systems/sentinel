@@ -19,9 +19,7 @@ async def test_full_scan_creates_account_node(
     """full_scan should upsert an AWSAccount node."""
     builder = GraphBuilder(mock_neo4j_client)
 
-    with patch(
-        "sentinel_perception.graph_builder.get_session", return_value=aws_session
-    ):
+    with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
         result = await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],
@@ -36,15 +34,11 @@ async def test_full_scan_creates_account_node(
 
 
 @pytest.mark.asyncio
-async def test_full_scan_returns_scan_result(
-    aws_session, mock_neo4j_client, mocked_aws
-):
+async def test_full_scan_returns_scan_result(aws_session, mock_neo4j_client, mocked_aws):
     """full_scan should return a ScanResult with timing info."""
     builder = GraphBuilder(mock_neo4j_client)
 
-    with patch(
-        "sentinel_perception.graph_builder.get_session", return_value=aws_session
-    ):
+    with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
         result = await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],
@@ -62,9 +56,7 @@ async def test_full_scan_discovers_s3_buckets(
     """full_scan should discover and write S3 bucket nodes."""
     builder = GraphBuilder(mock_neo4j_client)
 
-    with patch(
-        "sentinel_perception.graph_builder.get_session", return_value=aws_session
-    ):
+    with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
         await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],
@@ -83,9 +75,7 @@ async def test_full_scan_discovers_security_groups(
     """full_scan should discover security groups with posture flags."""
     builder = GraphBuilder(mock_neo4j_client)
 
-    with patch(
-        "sentinel_perception.graph_builder.get_session", return_value=aws_session
-    ):
+    with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
         await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],
@@ -96,19 +86,16 @@ async def test_full_scan_discovers_security_groups(
     open_sgs = [n for n in sg_nodes if n.group_id == open_sg_id]
     assert len(open_sgs) >= 1
     from sentinel_core.models.enums import PostureFlag
+
     assert PostureFlag.SG_OPEN_SSH in open_sgs[0].posture_flags
 
 
 @pytest.mark.asyncio
-async def test_full_scan_to_dict(
-    aws_session, mock_neo4j_client, mocked_aws
-):
+async def test_full_scan_to_dict(aws_session, mock_neo4j_client, mocked_aws):
     """ScanResult.to_dict() should return a serializable dict."""
     builder = GraphBuilder(mock_neo4j_client)
 
-    with patch(
-        "sentinel_perception.graph_builder.get_session", return_value=aws_session
-    ):
+    with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
         result = await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],

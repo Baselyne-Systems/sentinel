@@ -138,9 +138,7 @@ def test_cloudtrail_enable_log_validation():
     )
 
     session.client.assert_called_once_with("cloudtrail", region_name="us-east-1")
-    ct_client.update_trail.assert_called_once_with(
-        Name="my-trail", EnableLogFileValidation=True
-    )
+    ct_client.update_trail.assert_called_once_with(Name="my-trail", EnableLogFileValidation=True)
     assert result["trail_name"] == "my-trail"
     assert result["log_file_validation_enabled"] is True
 

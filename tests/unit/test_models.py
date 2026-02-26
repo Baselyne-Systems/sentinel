@@ -56,9 +56,7 @@ def test_security_group_model():
         region="us-east-1",
         group_id="sg-12345",
         name="test-sg",
-        inbound_rules=[
-            {"ip_protocol": "tcp", "from_port": 22, "to_port": 22, "cidr": "0.0.0.0/0"}
-        ],
+        inbound_rules=[{"ip_protocol": "tcp", "from_port": 22, "to_port": 22, "cidr": "0.0.0.0/0"}],
         posture_flags=[PostureFlag.SG_OPEN_SSH],
     )
     assert sg.resource_type == ResourceType.SECURITY_GROUP

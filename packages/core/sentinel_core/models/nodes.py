@@ -49,7 +49,9 @@ class GraphNode(BaseModel):
         data["discovered_at"] = self.discovered_at.isoformat()
         # Serialize any remaining dict or list-of-dict fields to JSON strings.
         for key, value in list(data.items()):
-            if isinstance(value, dict) or (isinstance(value, list) and value and isinstance(value[0], dict)):
+            if isinstance(value, dict) or (
+                isinstance(value, list) and value and isinstance(value[0], dict)
+            ):
                 data[key] = json.dumps(value)
         return data
 

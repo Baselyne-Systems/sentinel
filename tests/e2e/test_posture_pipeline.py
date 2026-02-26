@@ -45,9 +45,7 @@ async def test_posture_evaluator_finds_public_s3(
 
     findings = await evaluator.evaluate(account_id=ACCOUNT_ID)
 
-    s3_public_findings = [
-        f for f in findings if f.posture_flag == "S3_PUBLIC_ACCESS"
-    ]
+    s3_public_findings = [f for f in findings if f.posture_flag == "S3_PUBLIC_ACCESS"]
     assert len(s3_public_findings) >= 1, "Should find at least one public S3 bucket"
 
     bucket_ids = {f.node_id for f in s3_public_findings}
@@ -249,7 +247,9 @@ async def test_cis_rules_cypher_valid(clean_db: Neo4jClient):
             # Results may be empty (no violations in empty DB) — that's fine
             assert isinstance(results, list), f"Rule {rule.id} query should return a list"
         except Exception as e:
-            pytest.fail(f"Rule {rule.id} cypher_check failed with: {e}\n\nQuery:\n{rule.cypher_check}")
+            pytest.fail(
+                f"Rule {rule.id} cypher_check failed with: {e}\n\nQuery:\n{rule.cypher_check}"
+            )
 
 
 @pytest.mark.asyncio

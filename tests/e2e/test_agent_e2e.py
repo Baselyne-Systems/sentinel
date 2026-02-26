@@ -163,7 +163,9 @@ async def test_analyze_finding_full_pipeline(clean_db: Neo4jClient, agent_settin
     complete_events = [e for e in events if isinstance(e, AnalysisCompleteEvent)]
     error_events = [e for e in events if isinstance(e, ErrorEvent)]
 
-    assert len(error_events) == 0, f"Got unexpected error events: {[e.message for e in error_events]}"
+    assert len(error_events) == 0, (
+        f"Got unexpected error events: {[e.message for e in error_events]}"
+    )
     assert len(text_events) > 0, "Expected text_delta events"
     assert len(complete_events) == 1, "Expected exactly one analysis_complete event"
 
@@ -187,6 +189,7 @@ async def test_analyze_finding_full_pipeline(clean_db: Neo4jClient, agent_settin
 
     # 7. Verify cached JSON is parseable back to AnalysisResult
     from sentinel_agent.models import AnalysisResult
+
     cached = AnalysisResult.model_validate(json.loads(cache_result[0]["analysis"]))
     assert cached.priority_score == 9
     assert cached.node_id == "s3-public-test-bucket"
@@ -216,6 +219,7 @@ async def test_analyze_finding_sse_wire_format(clean_db: Neo4jClient, agent_sett
     neo4j = clean_db
 
     from sentinel_core.models.nodes import SecurityGroup
+
     sg = SecurityGroup(
         node_id="sg-e2e-test",
         account_id="123456789012",

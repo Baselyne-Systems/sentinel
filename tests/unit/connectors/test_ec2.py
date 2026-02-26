@@ -53,7 +53,9 @@ async def test_ec2_discovers_instance(aws_session, ec2_instance_id, mocked_aws):
     """EC2 instance should be discovered with correct properties."""
     nodes, edges = await ec2.discover(aws_session, ACCOUNT_ID, REGION)
 
-    instance_nodes = [n for n in nodes if isinstance(n, EC2Instance) and n.instance_id == ec2_instance_id]
+    instance_nodes = [
+        n for n in nodes if isinstance(n, EC2Instance) and n.instance_id == ec2_instance_id
+    ]
     assert len(instance_nodes) == 1
 
     instance = instance_nodes[0]

@@ -59,18 +59,33 @@ class RecordingNeo4jClient:
 
         elif "SG_OPEN_SSH" in cypher:
             for node in self.nodes.values():
-                if isinstance(node, SecurityGroup) and PostureFlag.SG_OPEN_SSH in node.posture_flags:
-                    results.append({"node_id": node.node_id, "group_id": node.group_id, "name": node.name})
+                if (
+                    isinstance(node, SecurityGroup)
+                    and PostureFlag.SG_OPEN_SSH in node.posture_flags
+                ):
+                    results.append(
+                        {"node_id": node.node_id, "group_id": node.group_id, "name": node.name}
+                    )
 
         elif "SG_OPEN_RDP" in cypher:
             for node in self.nodes.values():
-                if isinstance(node, SecurityGroup) and PostureFlag.SG_OPEN_RDP in node.posture_flags:
-                    results.append({"node_id": node.node_id, "group_id": node.group_id, "name": node.name})
+                if (
+                    isinstance(node, SecurityGroup)
+                    and PostureFlag.SG_OPEN_RDP in node.posture_flags
+                ):
+                    results.append(
+                        {"node_id": node.node_id, "group_id": node.group_id, "name": node.name}
+                    )
 
         elif "SG_OPEN_ALL_INGRESS" in cypher:
             for node in self.nodes.values():
-                if isinstance(node, SecurityGroup) and PostureFlag.SG_OPEN_ALL_INGRESS in node.posture_flags:
-                    results.append({"node_id": node.node_id, "group_id": node.group_id, "name": node.name})
+                if (
+                    isinstance(node, SecurityGroup)
+                    and PostureFlag.SG_OPEN_ALL_INGRESS in node.posture_flags
+                ):
+                    results.append(
+                        {"node_id": node.node_id, "group_id": node.group_id, "name": node.name}
+                    )
 
         elif "RDSInstance {publicly_accessible: true}" in cypher:
             for node in self.nodes.values():
@@ -94,8 +109,12 @@ class RecordingNeo4jClient:
 
         elif "IAM_STAR_POLICY" in cypher:
             from sentinel_core.models.nodes import IAMPolicy
+
             for node in self.nodes.values():
-                if isinstance(node, IAMPolicy) and PostureFlag.IAM_STAR_POLICY in node.posture_flags:
+                if (
+                    isinstance(node, IAMPolicy)
+                    and PostureFlag.IAM_STAR_POLICY in node.posture_flags
+                ):
                     results.append({"node_id": node.node_id, "name": node.name})
 
         elif "S3Bucket {versioning: false}" in cypher:
@@ -129,8 +148,9 @@ class RecordingNeo4jClient:
         pass
 
     async def clear_account(self, account_id):
-        self.nodes = {k: v for k, v in self.nodes.items()
-                      if getattr(v, "account_id", None) != account_id}
+        self.nodes = {
+            k: v for k, v in self.nodes.items() if getattr(v, "account_id", None) != account_id
+        }
 
 
 @pytest.mark.asyncio
@@ -172,49 +192,66 @@ async def test_full_scan_posture_integration(
 
     # ── Verify public S3 bucket has posture flag ───────────────────────────────
     public_bucket = next(
-        (n for n in client.nodes.values()
-         if isinstance(n, S3Bucket) and n.name == public_s3_bucket),
+        (
+            n
+            for n in client.nodes.values()
+            if isinstance(n, S3Bucket) and n.name == public_s3_bucket
+        ),
         None,
     )
     assert public_bucket is not None, "Public S3 bucket should have been discovered"
     assert public_bucket.is_public is True
-    assert PostureFlag.S3_PUBLIC_ACCESS in public_bucket.posture_flags, \
+    assert PostureFlag.S3_PUBLIC_ACCESS in public_bucket.posture_flags, (
         f"Expected S3_PUBLIC_ACCESS in {public_bucket.posture_flags}"
+    )
 
     # ── Verify open SSH security group has posture flag ────────────────────────
     open_sg = next(
-        (n for n in client.nodes.values()
-         if isinstance(n, SecurityGroup) and n.group_id == open_sg_id),
+        (
+            n
+            for n in client.nodes.values()
+            if isinstance(n, SecurityGroup) and n.group_id == open_sg_id
+        ),
         None,
     )
     assert open_sg is not None, "Open SSH security group should have been discovered"
-    assert PostureFlag.SG_OPEN_SSH in open_sg.posture_flags, \
+    assert PostureFlag.SG_OPEN_SSH in open_sg.posture_flags, (
         f"Expected SG_OPEN_SSH in {open_sg.posture_flags}"
+    )
 
     # ── Verify IAM user without MFA has posture flag ───────────────────────────
     user_no_mfa = next(
-        (n for n in client.nodes.values()
-         if isinstance(n, IAMUser) and n.name == "sentinel-test-user"),
+        (
+            n
+            for n in client.nodes.values()
+            if isinstance(n, IAMUser) and n.name == "sentinel-test-user"
+        ),
         None,
     )
     assert user_no_mfa is not None, "IAM user without MFA should have been discovered"
     assert user_no_mfa.has_console_access is True
     assert user_no_mfa.has_mfa is False
-    assert PostureFlag.IAM_NO_MFA in user_no_mfa.posture_flags, \
+    assert PostureFlag.IAM_NO_MFA in user_no_mfa.posture_flags, (
         f"Expected IAM_NO_MFA in {user_no_mfa.posture_flags}"
+    )
 
     # ── Verify RDS instance has posture flags ──────────────────────────────────
     public_rds = next(
-        (n for n in client.nodes.values()
-         if isinstance(n, RDSInstance) and n.db_id == "sentinel-test-db"),
+        (
+            n
+            for n in client.nodes.values()
+            if isinstance(n, RDSInstance) and n.db_id == "sentinel-test-db"
+        ),
         None,
     )
     assert public_rds is not None, "Public RDS instance should have been discovered"
     assert public_rds.publicly_accessible is True
-    assert PostureFlag.RDS_PUBLIC in public_rds.posture_flags, \
+    assert PostureFlag.RDS_PUBLIC in public_rds.posture_flags, (
         f"Expected RDS_PUBLIC in {public_rds.posture_flags}"
-    assert PostureFlag.RDS_NO_ENCRYPTION in public_rds.posture_flags, \
+    )
+    assert PostureFlag.RDS_NO_ENCRYPTION in public_rds.posture_flags, (
         f"Expected RDS_NO_ENCRYPTION in {public_rds.posture_flags}"
+    )
 
     # ── Verify evaluator produced findings ─────────────────────────────────────
     assert result.findings_count > 0, "Should have found CIS violations"
@@ -247,8 +284,11 @@ async def test_evaluation_stamps_node_with_cis_2_1_2(
 
     # The public bucket should have S3_NO_VERSIONING flag (CIS-2.1.2)
     bucket_node = next(
-        (n for n in client.nodes.values()
-         if isinstance(n, S3Bucket) and n.name == public_s3_bucket),
+        (
+            n
+            for n in client.nodes.values()
+            if isinstance(n, S3Bucket) and n.name == public_s3_bucket
+        ),
         None,
     )
     assert bucket_node is not None
@@ -257,5 +297,6 @@ async def test_evaluation_stamps_node_with_cis_2_1_2(
     stamped = client.stamped_flags.get(node_id, [])
     # Either it's in posture_flags (set during discovery) or stamped by evaluator
     all_flags = list(bucket_node.posture_flags) + stamped
-    assert "S3_NO_VERSIONING" in all_flags or "S3_PUBLIC_ACCESS" in all_flags, \
+    assert "S3_NO_VERSIONING" in all_flags or "S3_PUBLIC_ACCESS" in all_flags, (
         f"Expected CIS flags, got: {all_flags}"
+    )

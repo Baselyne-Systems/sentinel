@@ -40,6 +40,7 @@ def seeded_graph(neo4j_client: Neo4jClient, event_loop):
     Write ~200 nodes and edges once for the entire query benchmark module.
     Wiped after the module exits.
     """
+
     async def _seed():
         # 1 VPC
         vpc = VPC(
@@ -85,9 +86,7 @@ def seeded_graph(neo4j_client: Neo4jClient, event_loop):
                 posture_flags=["EBS_UNENCRYPTED"] if i % 10 == 0 else [],
             )
             await neo4j_client.upsert_node(ec2)
-            await neo4j_client.upsert_edge(
-                InVPC(from_node_id=ec2.node_id, to_node_id="qbench-vpc")
-            )
+            await neo4j_client.upsert_edge(InVPC(from_node_id=ec2.node_id, to_node_id="qbench-vpc"))
             await neo4j_client.upsert_edge(
                 MemberOfSG(from_node_id=ec2.node_id, to_node_id="qbench-sg")
             )
@@ -117,11 +116,14 @@ def test_query_public_s3_buckets(benchmark, seeded_graph, event_loop):
                 "MATCH (n:S3Bucket {is_public: true}) WHERE n.account_id = $a RETURN n",
                 {"a": _ACCOUNT},
             )
+
         return event_loop.run_until_complete(_q())
 
     benchmark(run)
     actual = run()
-    print(f"\n  public S3 query → {benchmark.stats['mean']*1000:.1f} ms/round, {len(actual)} rows")
+    print(
+        f"\n  public S3 query → {benchmark.stats['mean'] * 1000:.1f} ms/round, {len(actual)} rows"
+    )
     assert benchmark.stats["mean"] < 5.0, "Query should complete in <5s"
 
 
@@ -139,11 +141,14 @@ def test_query_findings_with_posture_flags(benchmark, seeded_graph, event_loop):
                 """,
                 {"a": _ACCOUNT},
             )
+
         return event_loop.run_until_complete(_q())
 
     benchmark(run)
     results = run()
-    print(f"\n  findings query → {benchmark.stats['mean']*1000:.1f} ms/round, {len(results)} flagged nodes")
+    print(
+        f"\n  findings query → {benchmark.stats['mean'] * 1000:.1f} ms/round, {len(results)} flagged nodes"
+    )
     assert len(results) > 0
     assert benchmark.stats["mean"] < 5.0
 
@@ -162,11 +167,14 @@ def test_bfs_depth_1_from_sg(benchmark, seeded_graph, event_loop):
                 """,
                 {"nid": "qbench-sg"},
             )
+
         return event_loop.run_until_complete(_q())
 
     benchmark(run)
     results = run()
-    print(f"\n  BFS depth-1 → {benchmark.stats['mean']*1000:.1f} ms/round, {len(results)} neighbors")
+    print(
+        f"\n  BFS depth-1 → {benchmark.stats['mean'] * 1000:.1f} ms/round, {len(results)} neighbors"
+    )
     assert len(results) > 0
     assert benchmark.stats["mean"] < 5.0
 
@@ -185,11 +193,14 @@ def test_bfs_depth_2_from_sg(benchmark, seeded_graph, event_loop):
                 """,
                 {"nid": "qbench-sg"},
             )
+
         return event_loop.run_until_complete(_q())
 
     benchmark(run)
     results = run()
-    print(f"\n  BFS depth-2 → {benchmark.stats['mean']*1000:.1f} ms/round, {len(results)} neighbors")
+    print(
+        f"\n  BFS depth-2 → {benchmark.stats['mean'] * 1000:.1f} ms/round, {len(results)} neighbors"
+    )
     assert len(results) > 0
     assert benchmark.stats["mean"] < 10.0
 
@@ -210,10 +221,13 @@ def test_posture_summary_count(benchmark, seeded_graph, event_loop):
                 """,
                 {"a": _ACCOUNT},
             )
+
         return event_loop.run_until_complete(_q())
 
     benchmark(run)
     results = run()
-    print(f"\n  posture summary → {benchmark.stats['mean']*1000:.1f} ms/round, {len(results)} flag types")
+    print(
+        f"\n  posture summary → {benchmark.stats['mean'] * 1000:.1f} ms/round, {len(results)} flag types"
+    )
     assert len(results) > 0
     assert benchmark.stats["mean"] < 5.0

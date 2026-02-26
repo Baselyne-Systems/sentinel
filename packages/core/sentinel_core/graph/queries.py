@@ -29,7 +29,9 @@ class GraphQueries:
         cypher = "MATCH (b:S3Bucket {is_public: true}) RETURN b"
         return await self._client.query(cypher)
 
-    async def find_overly_permissive_sgs(self, account_id: str | None = None) -> list[dict[str, Any]]:
+    async def find_overly_permissive_sgs(
+        self, account_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Return SecurityGroups that have any inbound rule with cidr 0.0.0.0/0 or ::/0.
         Stored as serialized list in inbound_rules property.
@@ -47,7 +49,9 @@ class GraphQueries:
         """
         return await self._client.query(cypher, params)
 
-    async def find_roles_with_star_actions(self, account_id: str | None = None) -> list[dict[str, Any]]:
+    async def find_roles_with_star_actions(
+        self, account_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """Return IAMPolicy nodes that grant Action: '*'."""
         params: dict[str, Any] = {}
         account_filter = "AND p.account_id = $account_id" if account_id else ""
@@ -60,7 +64,9 @@ class GraphQueries:
         """
         return await self._client.query(cypher, params)
 
-    async def find_internet_to_rds_paths(self, account_id: str | None = None) -> list[dict[str, Any]]:
+    async def find_internet_to_rds_paths(
+        self, account_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Find attack paths: SecurityGroup with open ingress → RDS instance that is publicly accessible.
         """
@@ -76,7 +82,9 @@ class GraphQueries:
         """
         return await self._client.query(cypher, params)
 
-    async def find_iam_users_without_mfa(self, account_id: str | None = None) -> list[dict[str, Any]]:
+    async def find_iam_users_without_mfa(
+        self, account_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """Return IAMUser nodes that have console access but no MFA."""
         params: dict[str, Any] = {}
         account_filter = "WHERE u.account_id = $account_id" if account_id else ""

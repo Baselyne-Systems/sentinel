@@ -366,7 +366,9 @@ async def test_delete_account_not_in_list(store: SentinelStore):
     """After delete, account no longer appears in list_accounts."""
     acct = _account()
     await store.upsert_account(acct)
-    await store.upsert_account({**_account(), "account_id": "111111111111", "regions": ["us-west-2"]})
+    await store.upsert_account(
+        {**_account(), "account_id": "111111111111", "regions": ["us-west-2"]}
+    )
 
     await store.delete_account(ACCOUNT_ID)
 

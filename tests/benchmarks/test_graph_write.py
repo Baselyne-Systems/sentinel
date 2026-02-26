@@ -46,15 +46,52 @@ def _mixed_nodes(n: int) -> list:
     for i in range(n):
         k = i % 5
         if k == 0:
-            nodes.append(S3Bucket(node_id=f"bmix-s3-{i}", account_id=_ACCOUNT, region="us-east-1", name=f"b-{i}"))
+            nodes.append(
+                S3Bucket(
+                    node_id=f"bmix-s3-{i}", account_id=_ACCOUNT, region="us-east-1", name=f"b-{i}"
+                )
+            )
         elif k == 1:
-            nodes.append(SecurityGroup(node_id=f"bmix-sg-{i}", account_id=_ACCOUNT, region="us-east-1", group_id=f"sg-{i}", name=f"sg-{i}", vpc_id="vpc-b"))
+            nodes.append(
+                SecurityGroup(
+                    node_id=f"bmix-sg-{i}",
+                    account_id=_ACCOUNT,
+                    region="us-east-1",
+                    group_id=f"sg-{i}",
+                    name=f"sg-{i}",
+                    vpc_id="vpc-b",
+                )
+            )
         elif k == 2:
-            nodes.append(RDSInstance(node_id=f"bmix-rds-{i}", account_id=_ACCOUNT, region="us-east-1", db_id=f"db-{i}", engine="postgres"))
+            nodes.append(
+                RDSInstance(
+                    node_id=f"bmix-rds-{i}",
+                    account_id=_ACCOUNT,
+                    region="us-east-1",
+                    db_id=f"db-{i}",
+                    engine="postgres",
+                )
+            )
         elif k == 3:
-            nodes.append(EC2Instance(node_id=f"bmix-ec2-{i}", account_id=_ACCOUNT, region="us-east-1", instance_id=f"i-{i:017x}"))
+            nodes.append(
+                EC2Instance(
+                    node_id=f"bmix-ec2-{i}",
+                    account_id=_ACCOUNT,
+                    region="us-east-1",
+                    instance_id=f"i-{i:017x}",
+                )
+            )
         else:
-            nodes.append(IAMRole(node_id=f"bmix-role-{i}", account_id=_ACCOUNT, region="global", role_id=f"role-id-{i}", name=f"role-{i}", arn=f"arn:aws:iam::{_ACCOUNT}:role/role-{i}"))
+            nodes.append(
+                IAMRole(
+                    node_id=f"bmix-role-{i}",
+                    account_id=_ACCOUNT,
+                    region="global",
+                    role_id=f"role-id-{i}",
+                    name=f"role-{i}",
+                    arn=f"arn:aws:iam::{_ACCOUNT}:role/role-{i}",
+                )
+            )
     return nodes
 
 
@@ -78,7 +115,9 @@ def test_upsert_10_nodes(benchmark, clean_graph, event_loop):
 
     benchmark(run)
     throughput = 10 / benchmark.stats["mean"]
-    print(f"\n  10 nodes → {benchmark.stats['mean']*1000:.1f} ms/round → {throughput:.0f} nodes/sec")
+    print(
+        f"\n  10 nodes → {benchmark.stats['mean'] * 1000:.1f} ms/round → {throughput:.0f} nodes/sec"
+    )
     assert throughput > 2
 
 
@@ -99,7 +138,9 @@ def test_upsert_100_s3_nodes(benchmark, clean_graph, event_loop):
 
     benchmark.pedantic(run, rounds=3, warmup_rounds=1)
     throughput = 100 / benchmark.stats["mean"]
-    print(f"\n  100 nodes → {benchmark.stats['mean']*1000:.0f} ms/round → {throughput:.0f} nodes/sec")
+    print(
+        f"\n  100 nodes → {benchmark.stats['mean'] * 1000:.0f} ms/round → {throughput:.0f} nodes/sec"
+    )
     assert throughput > 5
 
 
@@ -120,7 +161,9 @@ def test_upsert_500_mixed_nodes(benchmark, clean_graph, event_loop):
 
     benchmark.pedantic(run, rounds=2, warmup_rounds=1)
     throughput = 500 / benchmark.stats["mean"]
-    print(f"\n  500 mixed nodes → {benchmark.stats['mean']*1000:.0f} ms/round → {throughput:.0f} nodes/sec")
+    print(
+        f"\n  500 mixed nodes → {benchmark.stats['mean'] * 1000:.0f} ms/round → {throughput:.0f} nodes/sec"
+    )
     assert throughput > 5
 
 
@@ -152,5 +195,5 @@ def test_merge_idempotency_50_nodes_twice(clean_graph, event_loop):
 
     assert count == 50, f"MERGE created duplicates: expected 50, got {count}"
     ops_per_sec = 100 / elapsed
-    print(f"\n  50 nodes × 2 (MERGE) → {elapsed*1000:.0f} ms → {ops_per_sec:.0f} ops/sec")
+    print(f"\n  50 nodes × 2 (MERGE) → {elapsed * 1000:.0f} ms → {ops_per_sec:.0f} ops/sec")
     assert ops_per_sec > 5

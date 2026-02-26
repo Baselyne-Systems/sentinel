@@ -56,6 +56,7 @@ def event_loop():
 @pytest.fixture(scope="session")
 def neo4j_client(neo4j_bolt_url, event_loop):
     """Connected Neo4jClient shared across all benchmark tests."""
+
     async def _setup():
         client = Neo4jClient(
             uri=neo4j_bolt_url,
@@ -74,10 +75,6 @@ def neo4j_client(neo4j_bolt_url, event_loop):
 @pytest.fixture()
 def clean_graph(neo4j_client, event_loop):
     """Wipe all nodes before each benchmark."""
-    event_loop.run_until_complete(
-        neo4j_client.execute("MATCH (n) DETACH DELETE n")
-    )
+    event_loop.run_until_complete(neo4j_client.execute("MATCH (n) DETACH DELETE n"))
     yield neo4j_client
-    event_loop.run_until_complete(
-        neo4j_client.execute("MATCH (n) DETACH DELETE n")
-    )
+    event_loop.run_until_complete(neo4j_client.execute("MATCH (n) DETACH DELETE n"))

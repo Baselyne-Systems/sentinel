@@ -173,8 +173,7 @@ class GraphBuilder:
         all_edges: list[GraphEdge] = []
 
         region_tasks = [
-            self._scan_region(session, account_id, region, result)
-            for region in regions
+            self._scan_region(session, account_id, region, result) for region in regions
         ]
         region_results = await asyncio.gather(*region_tasks, return_exceptions=True)
 
@@ -223,11 +222,7 @@ class GraphBuilder:
         # ── Resolve Lambda → IAMRole edges ────────────────────────────────────
         # IAM connector uses role_id (from ListRoles) as node_id; Lambda stores
         # the role ARN. We build a lookup here to bridge the two.
-        iam_role_by_arn = {
-            n.arn: n.role_id
-            for n in all_nodes
-            if isinstance(n, IAMRole)
-        }
+        iam_role_by_arn = {n.arn: n.role_id for n in all_nodes if isinstance(n, IAMRole)}
         for node in all_nodes:
             if isinstance(node, LambdaFunction) and node.role_arn:
                 target_id = iam_role_by_arn.get(node.role_arn)

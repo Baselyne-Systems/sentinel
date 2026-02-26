@@ -200,9 +200,7 @@ async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
     app = create_app()
     app.dependency_overrides[get_sentinel_agent] = _mock_agent
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()
@@ -225,9 +223,7 @@ async def app_client_thinking(neo4j_client: Neo4jClient, job_store: SentinelStor
     app = create_app()
     app.dependency_overrides[get_sentinel_agent] = _mock_agent
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()
@@ -309,9 +305,7 @@ async def test_analyze_endpoint_404_for_unknown_node(app_client, clean_db):
 
 
 @pytest.mark.timeout(60)
-async def test_analyze_with_thinking_param_emits_thinking_events(
-    app_client_thinking, s3_finding
-):
+async def test_analyze_with_thinking_param_emits_thinking_events(app_client_thinking, s3_finding):
     """
     POST /analyze?thinking=true should emit thinking_delta events
     before the analysis_complete event.
@@ -347,9 +341,7 @@ async def test_get_cached_analysis_after_analyze(app_client, s3_finding):
     After running POST /analyze, GET /analysis returns the cached result.
     """
     # Run the analysis (consume the full stream)
-    async with app_client.stream(
-        "POST", f"/api/v1/agent/findings/{s3_finding}/analyze"
-    ) as resp:
+    async with app_client.stream("POST", f"/api/v1/agent/findings/{s3_finding}/analyze") as resp:
         await _collect_sse_events(resp)
 
     # Now the cache should be populated

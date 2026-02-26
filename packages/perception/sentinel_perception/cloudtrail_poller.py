@@ -149,9 +149,7 @@ class CloudTrailPoller:
         end_time: datetime,
     ) -> list[dict[str, Any]]:
         """Fetch CloudTrail events for the given time window."""
-        session = await asyncio.to_thread(
-            get_session, region, self._assume_role_arn
-        )
+        session = await asyncio.to_thread(get_session, region, self._assume_role_arn)
         ct = await run_sync(lambda: session.client("cloudtrail", region_name=region))
 
         def _lookup():
@@ -160,18 +158,14 @@ class CloudTrailPoller:
             for page in paginator.paginate(
                 StartTime=start_time,
                 EndTime=end_time,
-                LookupAttributes=[
-                    {"AttributeKey": "ReadOnly", "AttributeValue": "false"}
-                ],
+                LookupAttributes=[{"AttributeKey": "ReadOnly", "AttributeValue": "false"}],
             ):
                 events.extend(page.get("Events", []))
             return events
 
         return await run_sync(_lookup)
 
-    async def _process_events(
-        self, events: list[dict[str, Any]], region: str
-    ) -> None:
+    async def _process_events(self, events: list[dict[str, Any]], region: str) -> None:
         """Process CloudTrail events and trigger targeted re-scans."""
         seen_resources: set[tuple[str, str]] = set()  # (resource_id, resource_type)
 
@@ -216,9 +210,7 @@ class CloudTrailPoller:
                     exc,
                 )
 
-    def _extract_resource_id(
-        self, event: dict[str, Any], resource_type: str
-    ) -> str | None:
+    def _extract_resource_id(self, event: dict[str, Any], resource_type: str) -> str | None:
         """Extract the primary resource ID from a CloudTrail event."""
         # CloudTrail Resources field
         for resource in event.get("Resources", []):
@@ -227,6 +219,7 @@ class CloudTrailPoller:
 
         # Fallback: parse CloudTrailEvent JSON
         import json
+
         raw = event.get("CloudTrailEvent", "{}")
         try:
             ct_event = json.loads(raw)
@@ -237,9 +230,7 @@ class CloudTrailPoller:
                 "S3Bucket": lambda r: r.get("bucketName") or r.get("bucket"),
                 "SecurityGroup": lambda r: r.get("groupId"),
                 "EC2Instance": lambda r: (
-                    r.get("instancesSet", {})
-                    .get("items", [{}])[0]
-                    .get("instanceId")
+                    r.get("instancesSet", {}).get("items", [{}])[0].get("instanceId")
                 ),
                 "IAMRole": lambda r: r.get("roleName"),
                 "IAMUser": lambda r: r.get("userName"),

@@ -79,15 +79,11 @@ async def discover(
 
         # Edge: RDS → VPC
         if vpc_id:
-            edges.append(
-                InVPC(from_node_id=node_id, to_node_id=vpc_id, account_id=account_id)
-            )
+            edges.append(InVPC(from_node_id=node_id, to_node_id=vpc_id, account_id=account_id))
 
         # Edges: RDS → SecurityGroups
         for sg_id in sg_ids:
-            edges.append(
-                MemberOfSG(from_node_id=node_id, to_node_id=sg_id, account_id=account_id)
-            )
+            edges.append(MemberOfSG(from_node_id=node_id, to_node_id=sg_id, account_id=account_id))
 
     logger.info(
         "RDS discovery [%s]: %d instances",

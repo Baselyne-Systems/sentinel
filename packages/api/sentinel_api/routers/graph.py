@@ -61,7 +61,9 @@ async def list_nodes(
         ),
         examples=["S3Bucket", "IAMRole"],
     ),
-    account_id: str | None = Query(None, description="Filter by AWS account ID.", examples=["123456789012"]),
+    account_id: str | None = Query(
+        None, description="Filter by AWS account ID.", examples=["123456789012"]
+    ),
     region: str | None = Query(None, description="Filter by AWS region.", examples=["us-east-1"]),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of nodes to return."),
     offset: int = Query(0, ge=0, description="Number of nodes to skip (for pagination)."),

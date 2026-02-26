@@ -21,9 +21,7 @@ class PostureFlagItem(BaseModel):
     severity: str = Field(..., description="CRITICAL | HIGH | MEDIUM | LOW")
 
     model_config = {
-        "json_schema_extra": {
-            "example": {"flag": "SG_OPEN_SSH", "severity": "CRITICAL"}
-        }
+        "json_schema_extra": {"example": {"flag": "SG_OPEN_SSH", "severity": "CRITICAL"}}
     }
 
 
@@ -42,10 +40,16 @@ class GraphNodeResponse(BaseModel):
             "IAMRole, IAMUser, IAMPolicy."
         ),
     )
-    cloud_provider: str = Field(default="aws", description="Cloud provider (always 'aws' in Phase 1).")
+    cloud_provider: str = Field(
+        default="aws", description="Cloud provider (always 'aws' in Phase 1)."
+    )
     account_id: str = Field(..., description="AWS account ID that owns this resource.")
-    region: str = Field(default="", description="AWS region. Empty string for global resources (IAM, S3).")
-    tags: dict[str, str] = Field(default_factory=dict, description="AWS resource tags as key-value pairs.")
+    region: str = Field(
+        default="", description="AWS region. Empty string for global resources (IAM, S3)."
+    )
+    tags: dict[str, str] = Field(
+        default_factory=dict, description="AWS resource tags as key-value pairs."
+    )
     posture_flags: list[str] = Field(
         default_factory=list,
         description=(
@@ -53,7 +57,9 @@ class GraphNodeResponse(BaseModel):
             "(CRITICAL, HIGH, MEDIUM, LOW) and specific flag names (SG_OPEN_SSH, S3_PUBLIC_ACCESS…)."
         ),
     )
-    discovered_at: str = Field(..., description="ISO-8601 timestamp when this node was last discovered.")
+    discovered_at: str = Field(
+        ..., description="ISO-8601 timestamp when this node was last discovered."
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -110,9 +116,7 @@ class SubgraphResponse(BaseModel):
     nodes: list[dict[str, Any]] = Field(
         ..., description="All nodes within the requested depth from the root."
     )
-    edges: list[dict[str, Any]] = Field(
-        ..., description="All edges connecting the returned nodes."
-    )
+    edges: list[dict[str, Any]] = Field(..., description="All edges connecting the returned nodes.")
 
     model_config = {
         "json_schema_extra": {
@@ -122,9 +126,7 @@ class SubgraphResponse(BaseModel):
                     {"node_id": "vpc-0abc12345", "resource_type": "VPC"},
                     {"node_id": "subnet-0abc12345", "resource_type": "Subnet"},
                 ],
-                "edges": [
-                    {"from": "subnet-0abc12345", "to": "vpc-0abc12345", "type": "IN_VPC"}
-                ],
+                "edges": [{"from": "subnet-0abc12345", "to": "vpc-0abc12345", "type": "IN_VPC"}],
             }
         }
     }
@@ -139,9 +141,7 @@ class FindingResponse(BaseModel):
     node_id: str = Field(..., description="ID of the violating resource.")
     resource_type: str = Field(..., description="Type of the violating resource.")
     severity: str = Field(..., description="Highest severity among this node's posture flags.")
-    posture_flags: list[str] = Field(
-        ..., description="All CIS posture flags stamped on this node."
-    )
+    posture_flags: list[str] = Field(..., description="All CIS posture flags stamped on this node.")
     account_id: str = Field(..., description="AWS account ID.")
     region: str = Field(default="", description="AWS region (empty for global resources).")
 
@@ -171,9 +171,7 @@ class FindingsBySeverity(BaseModel):
 class PostureSummaryResponse(BaseModel):
     """Aggregated security posture summary for an account."""
 
-    total_nodes: int = Field(
-        ..., description="Total number of discovered resources in the graph."
-    )
+    total_nodes: int = Field(..., description="Total number of discovered resources in the graph.")
     findings_by_severity: FindingsBySeverity = Field(
         ..., description="Count of resources with findings at each severity level."
     )
@@ -213,15 +211,11 @@ class CISRuleResponse(BaseModel):
     id: str = Field(..., description="CIS rule identifier, e.g. 'CIS-2.1.5'.")
     title: str = Field(..., description="Human-readable rule title.")
     severity: str = Field(..., description="Rule severity: CRITICAL | HIGH | MEDIUM | LOW.")
-    resource_types: list[str] = Field(
-        ..., description="AWS resource types this rule applies to."
-    )
+    resource_types: list[str] = Field(..., description="AWS resource types this rule applies to.")
     posture_flag: str = Field(
         ..., description="Flag stamped on violating nodes, e.g. 'S3_PUBLIC_ACCESS'."
     )
-    remediation_hint: str = Field(
-        ..., description="Brief remediation guidance for this rule."
-    )
+    remediation_hint: str = Field(..., description="Brief remediation guidance for this rule.")
     tags: list[str] = Field(
         default_factory=list,
         description="Categorization tags, e.g. ['s3', 'public-access'].",
@@ -248,8 +242,12 @@ class CISRuleResponse(BaseModel):
 class ScanTriggerResponse(BaseModel):
     """Response from POST /scan/trigger."""
 
-    job_id: str = Field(..., description="UUID identifying this scan job. Use to poll /scan/{job_id}/status.")
-    status: str = Field(default="queued", description="Initial job status. Always 'queued' on trigger.")
+    job_id: str = Field(
+        ..., description="UUID identifying this scan job. Use to poll /scan/{job_id}/status."
+    )
+    status: str = Field(
+        default="queued", description="Initial job status. Always 'queued' on trigger."
+    )
     account_id: str = Field(..., description="AWS account being scanned.")
 
     model_config = {
@@ -334,9 +332,7 @@ class AccountResponse(BaseModel):
             "Leave empty to use the default credential chain."
         ),
     )
-    regions: list[str] = Field(
-        ..., description="AWS regions to scan for this account."
-    )
+    regions: list[str] = Field(..., description="AWS regions to scan for this account.")
     registered_at: str = Field(..., description="ISO-8601 timestamp when account was registered.")
     updated_at: str = Field(..., description="ISO-8601 timestamp of last update.")
 
@@ -362,6 +358,4 @@ class ErrorResponse(BaseModel):
 
     detail: str = Field(..., description="Human-readable error description.")
 
-    model_config = {
-        "json_schema_extra": {"example": {"detail": "Node 'i-nonexistent' not found"}}
-    }
+    model_config = {"json_schema_extra": {"example": {"detail": "Node 'i-nonexistent' not found"}}}

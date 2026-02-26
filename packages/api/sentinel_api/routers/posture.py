@@ -55,9 +55,7 @@ async def get_findings(
             "sg": {"value": "SecurityGroup"},
         },
     ),
-    account_id: str | None = Query(
-        None, description="Filter findings to a specific AWS account."
-    ),
+    account_id: str | None = Query(None, description="Filter findings to a specific AWS account."),
 ) -> list[dict[str, Any]]:
     """
     Return all nodes with posture violations.
@@ -89,9 +87,7 @@ async def get_findings(
 )
 async def get_posture_summary(
     queries: QueriesDep,
-    account_id: str | None = Query(
-        None, description="Scope summary to a specific AWS account."
-    ),
+    account_id: str | None = Query(None, description="Scope summary to a specific AWS account."),
 ) -> dict[str, Any]:
     """
     Return posture summary with counts by severity and CIS alignment percentage.

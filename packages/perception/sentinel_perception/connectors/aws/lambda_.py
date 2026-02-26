@@ -62,15 +62,11 @@ async def discover(
 
         # Edge: Lambda → VPC
         if vpc_id:
-            edges.append(
-                InVPC(from_node_id=node_id, to_node_id=vpc_id, account_id=account_id)
-            )
+            edges.append(InVPC(from_node_id=node_id, to_node_id=vpc_id, account_id=account_id))
 
         # Edge: Lambda → SecurityGroups
         for sg_id in sg_ids:
-            edges.append(
-                MemberOfSG(from_node_id=node_id, to_node_id=sg_id, account_id=account_id)
-            )
+            edges.append(MemberOfSG(from_node_id=node_id, to_node_id=sg_id, account_id=account_id))
 
         # Edge: Lambda → IAMRole (ExecutesAs)
         if role_arn:

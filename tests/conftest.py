@@ -25,6 +25,7 @@ REGION = "us-east-1"
 
 # ── AWS environment fixture ────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="function")
 def aws_credentials(monkeypatch):
     """Ensure boto3 uses fake credentials with moto."""
@@ -137,9 +138,7 @@ def private_s3_bucket(aws_session) -> str:
     s3.put_bucket_encryption(
         Bucket=bucket_name,
         ServerSideEncryptionConfiguration={
-            "Rules": [
-                {"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}
-            ]
+            "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
         },
     )
     return bucket_name
@@ -231,6 +230,7 @@ def public_rds_instance(aws_session, vpc_id, subnet_ids, open_sg_id):
 
 
 # ── Mock Neo4j client fixture ──────────────────────────────────────────────────
+
 
 @pytest.fixture
 def mock_neo4j_client():

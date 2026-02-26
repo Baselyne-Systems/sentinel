@@ -145,9 +145,7 @@ class SentinelStore:
     async def list_scan_jobs(self) -> list[dict[str, Any]]:
         """Return all scan jobs, newest first."""
         assert self._db is not None
-        async with self._db.execute(
-            "SELECT * FROM scan_jobs ORDER BY started_at DESC"
-        ) as cursor:
+        async with self._db.execute("SELECT * FROM scan_jobs ORDER BY started_at DESC") as cursor:
             rows = await cursor.fetchall()
         return [_row_to_scan_job(r) for r in rows]
 
@@ -272,9 +270,7 @@ class SentinelStore:
     async def delete_account(self, account_id: str) -> None:
         """Delete an account record."""
         assert self._db is not None
-        await self._db.execute(
-            "DELETE FROM accounts WHERE account_id = ?", (account_id,)
-        )
+        await self._db.execute("DELETE FROM accounts WHERE account_id = ?", (account_id,))
         await self._db.commit()
 
 

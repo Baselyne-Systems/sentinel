@@ -59,6 +59,7 @@ def enable_trail(params: dict, session) -> dict:
 
         # Attach a bucket policy allowing CloudTrail to write
         import json
+
         bucket_policy = {
             "Version": "2012-10-17",
             "Statement": [
@@ -75,9 +76,7 @@ def enable_trail(params: dict, session) -> dict:
                     "Principal": {"Service": "cloudtrail.amazonaws.com"},
                     "Action": "s3:PutObject",
                     "Resource": f"arn:aws:s3:::{s3_bucket}/AWSLogs/{account_id}/*",
-                    "Condition": {
-                        "StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control"}
-                    },
+                    "Condition": {"StringEquals": {"s3:x-amz-acl": "bucket-owner-full-control"}},
                 },
             ],
         }

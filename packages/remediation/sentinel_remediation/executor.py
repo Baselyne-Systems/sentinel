@@ -91,9 +91,7 @@ class RemediationExecutor:
                 region=job.proposal.region,
                 assume_role_arn=assume_role_arn,
             )
-            output: dict = await asyncio.to_thread(
-                remediator_fn, job.proposal.params, session
-            )
+            output: dict = await asyncio.to_thread(remediator_fn, job.proposal.params, session)
             job.status = JobStatus.COMPLETED
             job.output = output
             job.completed_at = datetime.now(UTC).isoformat()

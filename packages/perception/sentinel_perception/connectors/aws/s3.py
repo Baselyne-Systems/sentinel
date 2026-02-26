@@ -64,9 +64,7 @@ async def discover(
 
         # ── Security properties ────────────────────────────────────────────────
         # Public access block
-        pab = await run_sync(
-            safe_get, s3, "get_public_access_block", default={}, Bucket=name
-        )
+        pab = await run_sync(safe_get, s3, "get_public_access_block", default={}, Bucket=name)
         pab_config = pab.get("PublicAccessBlockConfiguration", {})
         block_all_public = (
             pab_config.get("BlockPublicAcls", False)
@@ -80,27 +78,19 @@ async def discover(
         acl_public = _is_acl_public(acl)
 
         # Bucket policy
-        policy_raw = await run_sync(
-            safe_get, s3, "get_bucket_policy", default=None, Bucket=name
-        )
+        policy_raw = await run_sync(safe_get, s3, "get_bucket_policy", default=None, Bucket=name)
         policy_exists = policy_raw is not None and "Policy" in policy_raw
 
         # Encryption
-        enc = await run_sync(
-            safe_get, s3, "get_bucket_encryption", default=None, Bucket=name
-        )
+        enc = await run_sync(safe_get, s3, "get_bucket_encryption", default=None, Bucket=name)
         has_encryption = enc is not None and "ServerSideEncryptionConfiguration" in enc
 
         # Versioning
-        ver = await run_sync(
-            safe_get, s3, "get_bucket_versioning", default={}, Bucket=name
-        )
+        ver = await run_sync(safe_get, s3, "get_bucket_versioning", default={}, Bucket=name)
         has_versioning = ver.get("Status") == "Enabled"
 
         # Logging
-        log = await run_sync(
-            safe_get, s3, "get_bucket_logging", default={}, Bucket=name
-        )
+        log = await run_sync(safe_get, s3, "get_bucket_logging", default={}, Bucket=name)
         has_logging = "LoggingEnabled" in log
 
         # Determine public: no block AND (acl_public OR no policy)

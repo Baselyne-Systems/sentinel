@@ -203,9 +203,7 @@ async def test_get_node_404_for_missing_node(clean_db, app_client):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
-async def test_get_node_includes_posture_flags(
-    populated_db, app_client, public_s3_bucket
-):
+async def test_get_node_includes_posture_flags(populated_db, app_client, public_s3_bucket):
     """Node detail should include posture_flags stamped during evaluation."""
     set_neo4j_client(populated_db)
     node_id = f"s3-{public_s3_bucket}"
@@ -225,9 +223,7 @@ async def test_get_node_includes_posture_flags(
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
-async def test_get_neighbors_returns_subgraph(
-    populated_db, app_client, vpc_id
-):
+async def test_get_neighbors_returns_subgraph(populated_db, app_client, vpc_id):
     """GET /api/v1/graph/nodes/{id}/neighbors returns subgraph structure."""
     set_neo4j_client(populated_db)
 

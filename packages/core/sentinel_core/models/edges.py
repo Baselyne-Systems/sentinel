@@ -32,7 +32,9 @@ class GraphEdge(BaseModel):
         data["created_at"] = self.created_at.isoformat()
         # Neo4j only accepts primitives; serialize any dict / list-of-dict fields.
         for key, value in list(data.items()):
-            if isinstance(value, dict) or (isinstance(value, list) and value and isinstance(value[0], dict)):
+            if isinstance(value, dict) or (
+                isinstance(value, list) and value and isinstance(value[0], dict)
+            ):
                 data[key] = json.dumps(value)
         return data
 

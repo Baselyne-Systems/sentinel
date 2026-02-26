@@ -136,7 +136,11 @@ def _make_mock_client(query_return=None, execute_return=None):
 class TestGetResource:
     @pytest.mark.asyncio
     async def test_returns_node_dict_when_found(self):
-        node_data = {"resource_type": "S3Bucket", "node_id": "s3-test", "posture_flags": ["S3_PUBLIC_ACL"]}
+        node_data = {
+            "resource_type": "S3Bucket",
+            "node_id": "s3-test",
+            "posture_flags": ["S3_PUBLIC_ACL"],
+        }
         client = _make_mock_client(query_return=[{"n": node_data}])
         tools = AgentTools(client)
         result = await tools.get_resource("s3-test")
@@ -155,7 +159,12 @@ class TestGetNeighbors:
     @pytest.mark.asyncio
     async def test_returns_list_of_neighbors(self):
         rows = [
-            {"node_id": "sg-1", "resource_type": "SecurityGroup", "posture_flags": [], "relationship_types": ["MEMBER_OF_SG"]},
+            {
+                "node_id": "sg-1",
+                "resource_type": "SecurityGroup",
+                "posture_flags": [],
+                "relationship_types": ["MEMBER_OF_SG"],
+            },
         ]
         client = _make_mock_client(query_return=rows)
         tools = AgentTools(client)
@@ -223,7 +232,9 @@ class TestQueryGraph:
 class TestDispatch:
     @pytest.mark.asyncio
     async def test_dispatch_get_resource(self):
-        client = _make_mock_client(query_return=[{"n": {"resource_type": "EC2Instance", "node_id": "i-1"}}])
+        client = _make_mock_client(
+            query_return=[{"n": {"resource_type": "EC2Instance", "node_id": "i-1"}}]
+        )
         tools = AgentTools(client)
         raw = await tools.dispatch("get_resource", {"node_id": "i-1"})
         data = json.loads(raw)

@@ -17,7 +17,9 @@ def test_rules_have_required_fields():
     for rule in ALL_RULES:
         assert rule.id, f"Rule missing ID: {rule}"
         assert rule.title, f"Rule {rule.id} missing title"
-        assert rule.severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"), f"Invalid severity: {rule.id}"
+        assert rule.severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"), (
+            f"Invalid severity: {rule.id}"
+        )
         assert len(rule.resource_types) > 0, f"Rule {rule.id} has no resource_types"
         assert rule.cypher_check.strip(), f"Rule {rule.id} has empty cypher_check"
         assert rule.posture_flag, f"Rule {rule.id} has no posture_flag"
@@ -37,11 +39,11 @@ def test_key_cis_rules_present():
     expected_ids = [
         "CIS-1.10",  # MFA for IAM users
         "CIS-1.16",  # No star policies
-        "CIS-2.1.5", # S3 not public
-        "CIS-2.3.2", # RDS not public
-        "CIS-3.1",   # No open SSH
-        "CIS-3.2",   # No open RDP
-        "CIS-4.1",   # CloudTrail enabled
+        "CIS-2.1.5",  # S3 not public
+        "CIS-2.3.2",  # RDS not public
+        "CIS-3.1",  # No open SSH
+        "CIS-3.2",  # No open RDP
+        "CIS-4.1",  # CloudTrail enabled
     ]
     for rule_id in expected_ids:
         assert rule_id in RULES_BY_ID, f"Missing expected rule: {rule_id}"

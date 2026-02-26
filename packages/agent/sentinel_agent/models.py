@@ -88,9 +88,7 @@ class ToolUseEvent:
 
     def to_sse(self) -> str:
         """Return an SSE-formatted data line for this tool event."""
-        return (
-            f"data: {json.dumps({'event': self.event, 'tool_name': self.tool_name, 'tool_input': self.tool_input, 'tool_result_summary': self.tool_result_summary})}\n\n"
-        )
+        return f"data: {json.dumps({'event': self.event, 'tool_name': self.tool_name, 'tool_input': self.tool_input, 'tool_result_summary': self.tool_result_summary})}\n\n"
 
 
 @dataclass
@@ -112,9 +110,7 @@ class AnalysisCompleteEvent:
 
     def to_sse(self) -> str:
         """Return an SSE-formatted data line containing the full result."""
-        return (
-            f"data: {json.dumps({'event': self.event, 'result': self.result.model_dump()})}\n\n"
-        )
+        return f"data: {json.dumps({'event': self.event, 'result': self.result.model_dump()})}\n\n"
 
 
 @dataclass

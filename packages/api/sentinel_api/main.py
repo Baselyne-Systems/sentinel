@@ -108,11 +108,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     settings = get_settings()
 
-    client = Neo4jClient(
-        uri=settings.neo4j_uri,
-        user=settings.neo4j_user,
-        password=settings.neo4j_password,
-    ) if not neo4j_pre_injected else None
+    client = (
+        Neo4jClient(
+            uri=settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+        )
+        if not neo4j_pre_injected
+        else None
+    )
 
     store: SentinelStore | None = None
     poller: CloudTrailPoller | None = None

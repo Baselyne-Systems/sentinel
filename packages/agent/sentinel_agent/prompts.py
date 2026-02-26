@@ -222,8 +222,7 @@ def build_brief_message(
     for i, f in enumerate(findings, 1):
         flags = ", ".join(f.get("posture_flags", []))
         lines.append(
-            f"{i}. `{f.get('node_id', 'unknown')}` ({f.get('resource_type', '?')}) "
-            f"— flags: {flags}"
+            f"{i}. `{f.get('node_id', 'unknown')}` ({f.get('resource_type', '?')}) — flags: {flags}"
         )
 
     lines += [

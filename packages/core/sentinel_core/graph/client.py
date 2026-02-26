@@ -108,7 +108,9 @@ class Neo4jClient:
 
     # ── Core operations ────────────────────────────────────────────────────────
 
-    async def query(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    async def query(
+        self, cypher: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a read Cypher query and return all records as dicts.
 
         Args:

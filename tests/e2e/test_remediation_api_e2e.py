@@ -61,9 +61,7 @@ async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
     set_neo4j_client(neo4j_client)
     set_store(job_store)
     app = create_app()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
@@ -116,6 +114,7 @@ async def test_propose_404_for_unknown_node(app_client, clean_db):
 @pytest.mark.timeout(60)
 async def test_propose_empty_list_for_node_with_no_known_flags(app_client, clean_db):
     """A node with no remediable flags returns an empty list (not an error)."""
+
     # Write a compliant node with no posture flags
     async def _write():
         bucket = S3Bucket(
@@ -153,9 +152,7 @@ async def test_list_jobs_after_propose(app_client, s3_node):
 @pytest.mark.timeout(60)
 async def test_get_job_by_id(app_client, s3_node):
     node_id, _ = s3_node
-    propose_resp = await app_client.post(
-        "/api/v1/remediation/propose", json={"node_id": node_id}
-    )
+    propose_resp = await app_client.post("/api/v1/remediation/propose", json={"node_id": node_id})
     job_id = propose_resp.json()[0]["job_id"]
 
     response = await app_client.get(f"/api/v1/remediation/{job_id}")
@@ -175,9 +172,7 @@ async def test_get_job_404_unknown_id(app_client, clean_db):
 @pytest.mark.timeout(60)
 async def test_reject_sets_rejected_status(app_client, s3_node):
     node_id, _ = s3_node
-    propose_resp = await app_client.post(
-        "/api/v1/remediation/propose", json={"node_id": node_id}
-    )
+    propose_resp = await app_client.post("/api/v1/remediation/propose", json={"node_id": node_id})
     job_id = propose_resp.json()[0]["job_id"]
 
     reject_resp = await app_client.post(f"/api/v1/remediation/{job_id}/reject")
@@ -191,9 +186,7 @@ async def test_reject_sets_rejected_status(app_client, s3_node):
 async def test_reject_409_on_non_pending_job(app_client, s3_node):
     """Rejecting an already-rejected job returns 409."""
     node_id, _ = s3_node
-    propose_resp = await app_client.post(
-        "/api/v1/remediation/propose", json={"node_id": node_id}
-    )
+    propose_resp = await app_client.post("/api/v1/remediation/propose", json={"node_id": node_id})
     job_id = propose_resp.json()[0]["job_id"]
 
     await app_client.post(f"/api/v1/remediation/{job_id}/reject")
@@ -214,13 +207,9 @@ async def test_approve_executes_job_and_completes(app_client, s3_node):
     node_id, neo4j = s3_node
 
     # Propose
-    propose_resp = await app_client.post(
-        "/api/v1/remediation/propose", json={"node_id": node_id}
-    )
+    propose_resp = await app_client.post("/api/v1/remediation/propose", json={"node_id": node_id})
     jobs_data = propose_resp.json()
-    block_job = next(
-        j for j in jobs_data if j["proposal"]["action"] == "s3_block_public_access"
-    )
+    block_job = next(j for j in jobs_data if j["proposal"]["action"] == "s3_block_public_access")
     job_id = block_job["job_id"]
 
     # Build a mock boto3 session that simulates success
@@ -249,9 +238,7 @@ async def test_approve_sets_failed_on_boto3_error(app_client, s3_node):
     """When boto3 raises, the job moves to FAILED status."""
     node_id, _ = s3_node
 
-    propose_resp = await app_client.post(
-        "/api/v1/remediation/propose", json={"node_id": node_id}
-    )
+    propose_resp = await app_client.post("/api/v1/remediation/propose", json={"node_id": node_id})
     job_id = propose_resp.json()[0]["job_id"]
 
     mock_session = MagicMock()
@@ -272,9 +259,7 @@ async def test_approve_sets_failed_on_boto3_error(app_client, s3_node):
 async def test_approve_409_on_non_pending_job(app_client, s3_node):
     """Approving a rejected job returns 409."""
     node_id, _ = s3_node
-    propose_resp = await app_client.post(
-        "/api/v1/remediation/propose", json={"node_id": node_id}
-    )
+    propose_resp = await app_client.post("/api/v1/remediation/propose", json={"node_id": node_id})
     job_id = propose_resp.json()[0]["job_id"]
 
     await app_client.post(f"/api/v1/remediation/{job_id}/reject")  # reject first

@@ -473,9 +473,7 @@ class SentinelAgent:
                 "messages": messages,
             }
             if enable_thinking:
-                effective_max_tokens = max(
-                    self._max_tokens, self._thinking_budget_tokens + 2048
-                )
+                effective_max_tokens = max(self._max_tokens, self._thinking_budget_tokens + 2048)
                 api_kwargs["thinking"] = {
                     "type": "enabled",
                     "budget_tokens": self._thinking_budget_tokens,

@@ -61,7 +61,9 @@ async def _seed_violating_nodes(client: Neo4jClient, n: int) -> None:
                 group_id=f"sg-pbench-{i}",
                 name=f"open-sg-{i}",
                 vpc_id="vpc-pbench",
-                inbound_rules=[{"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr": "0.0.0.0/0"}],
+                inbound_rules=[
+                    {"from_port": 22, "to_port": 22, "protocol": "tcp", "cidr": "0.0.0.0/0"}
+                ],
             )
         )
 
@@ -112,7 +114,7 @@ def test_evaluate_10_nodes(benchmark, clean_graph, event_loop):
 
     flagged = event_loop.run_until_complete(_count_flagged())
     sec = benchmark.stats["mean"]
-    print(f"\n  10 nodes → {sec*1000:.0f} ms/round, {flagged} flagged")
+    print(f"\n  10 nodes → {sec * 1000:.0f} ms/round, {flagged} flagged")
     assert flagged > 0, "Expected some flagged nodes"
     assert sec < 30.0
 
@@ -128,7 +130,7 @@ def test_evaluate_100_nodes(benchmark, clean_graph, event_loop):
 
     benchmark.pedantic(run, rounds=3, warmup_rounds=1)
     sec = benchmark.stats["mean"]
-    print(f"\n  100 nodes → {sec*1000:.0f} ms/round")
+    print(f"\n  100 nodes → {sec * 1000:.0f} ms/round")
     assert sec < 60.0
 
 
@@ -143,5 +145,5 @@ def test_evaluate_250_nodes(benchmark, clean_graph, event_loop):
 
     benchmark.pedantic(run, rounds=2, warmup_rounds=1)
     sec = benchmark.stats["mean"]
-    print(f"\n  250 nodes → {sec*1000:.0f} ms/round")
+    print(f"\n  250 nodes → {sec * 1000:.0f} ms/round")
     assert sec < 120.0
