@@ -247,7 +247,7 @@ await queries.find_iam_users_without_mfa()    # MATCH (u:IAMUser {has_mfa: false
 await queries.find_unencrypted_rds()          # MATCH (r:RDSInstance {encrypted: false})
 ```
 
-These are also the backbone of the agent's `find_attack_paths` tool.
+These are used directly by the API posture endpoints. The agent's `find_attack_paths` tool is similar in intent but uses its own inline Cypher queries scoped to a specific node, rather than calling these account-wide methods.
 
 ### 3.6 CIS rules
 
@@ -523,14 +523,49 @@ Stored on Neo4j as: `n.agent_analysis = json.dumps(result.model_dump())`, `n.age
 | Tool | What it does |
 |------|-------------|
 | `get_resource` | Fetch all properties of a single node by `node_id` |
-| `get_neighbors` | BFS subgraph to depth N (max 4) around a node |
-| `find_attack_paths` | Runs 3 Cypher queries in parallel: open SGs, internet-to-RDS paths, IAM privilege escalation |
+| `get_neighbors` | Undirected BFS up to depth N (max 4) around a node |
+| `find_attack_paths` | 3 sequential targeted queries: open-ingress SGs, public exposure, IAM escalation |
 | `query_graph` | Arbitrary Cypher read (read-only enforced by safety guard) |
 
-**Cypher safety guard** (`_safe_cypher()`):
-- Must start with `MATCH` or `OPTIONAL MATCH` or `WITH`
-- Blocks: `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`, `DROP`, `REMOVE`, `CALL` (write procedures)
-- Auto-injects `LIMIT 50` if missing
+#### `get_neighbors` — undirected BFS
+
+```cypher
+MATCH path = (start {node_id: $node_id})-[*1..{depth}]-(neighbor)
+RETURN neighbor.node_id, neighbor.resource_type, neighbor.posture_flags,
+       [r IN relationships(path) | type(r)] AS relationship_types
+LIMIT 50
+```
+
+The traversal is **undirected** (the `-` has no arrow). This is intentional: a compromised resource exposes both things it *connects to* (e.g. the VPC it lives in) and things that *connect to it* (e.g. an EC2 instance that mounts it as a volume). Blast-radius assessment requires the full neighbourhood regardless of edge direction.
+
+`depth` is clamped to `[1, 4]`. In practice:
+- **depth 1** — direct connections: the SGs this EC2 is a member of, the VPC it lives in, the role it executes as.
+- **depth 2** (default) — two hops: other instances in the same SG, IAM policies attached to the role, subnets in the same VPC.
+- **depth 3–4** — broader blast radius, but in large environments can return hundreds of nodes; the hard `LIMIT 50` prevents runaway result sets.
+
+Results include the `relationship_types` list for each path so the agent can reason about *how* nodes are connected, not just *that* they are.
+
+#### `find_attack_paths` — three targeted queries
+
+Runs three Cypher queries **sequentially** and combines results into a single list. Each result carries a `path_type` discriminator so the agent can tell which query it came from:
+
+1. **`"open_ingress"`** — finds `SecurityGroup` nodes attached to this resource via `MEMBER_OF_SG` that carry `SG_OPEN_SSH`, `SG_OPEN_RDP`, or `SG_OPEN_ALL_INGRESS`. These represent direct internet exposure of the compute/data tier.
+
+2. **`"public_exposure"`** — checks whether the node itself carries `publicly_accessible = true` or `is_public = true`. This applies to RDS instances, S3 buckets, and similar resources that have an explicit public-accessibility flag separate from their security group.
+
+3. **`"privilege_escalation"`** — follows `CAN_ASSUME` edges up to 3 hops to find `IAMRole` nodes tagged `IAM_STAR_POLICY`. A resource that can assume a wildcard-policy role (directly or transitively) gives an attacker full account-level control. The result includes `hops` so the agent knows whether this is a one-step or multi-step escalation path.
+
+The three queries are distinct by design: you can have internet exposure without public accessibility (a privately-addressed EC2 behind an open SG), and public accessibility without an open SG (an RDS instance with `publicly_accessible = true` but a correctly locked-down SG). Running all three catches cases that any single query would miss.
+
+#### Cypher safety guard (`_safe_cypher()`)
+
+Protects `query_graph` against LLM-generated write operations:
+
+1. **Whitelist** — query must begin with `MATCH`, `OPTIONAL MATCH`, `WITH`, `RETURN`, `CALL`, `UNWIND`, `EXPLAIN`, or `PROFILE`. Anything else is rejected before the blacklist is checked.
+2. **Blacklist** — any occurrence of `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH`, `DROP`, `REMOVE`, or `FOREACH` anywhere in the string is blocked. `CALL` is intentionally absent from the blacklist because it is also a legitimate read keyword (e.g. `CALL db.labels()`); the system-prompt instructs the agent to use only `MATCH … RETURN` queries, making `CALL` an edge case handled by instruction rather than by the guard.
+3. **Auto-LIMIT** — if no `LIMIT N` clause is present, `LIMIT 50` is appended.
+
+The two-stage design is defence-in-depth: the whitelist rejects obviously malformed queries early; the blacklist catches attempts to smuggle write keywords inside an otherwise valid `MATCH` clause (e.g. `MATCH (n) SET n.x = 1 RETURN n`).
 
 **`TOOL_SCHEMAS`** — Anthropic-format tool definitions (name, description, input_schema). Used by `AnthropicBackend` directly; `to_openai_tools(TOOL_SCHEMAS)` converts them to OpenAI function format for `OpenAIBackend`.
 

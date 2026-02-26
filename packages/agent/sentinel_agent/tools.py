@@ -20,7 +20,7 @@ Tool inventory
      - Walk the graph up to *depth* hops from a node
      - Blast-radius assessment: what else could be compromised?
    * - ``find_attack_paths``
-     - Run three targeted attack-path queries in parallel
+     - Run three targeted attack-path queries sequentially and combine results
      - Exploitability: open SGs, public exposure, IAM escalation
    * - ``query_graph``
      - Execute an arbitrary read-only Cypher query
