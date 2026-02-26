@@ -8,10 +8,10 @@ import logging
 from typing import Any
 
 import boto3
-
 from sentinel_core.models.edges import InSubnet, InVPC, MemberOfSG
 from sentinel_core.models.enums import PostureFlag
-from sentinel_core.models.nodes import EC2Instance, GraphNode, SecurityGroup, Subnet, VPC
+from sentinel_core.models.nodes import VPC, EC2Instance, GraphNode, SecurityGroup, Subnet
+
 from sentinel_perception.connectors.aws.base import paginate, run_sync
 
 logger = logging.getLogger(__name__)

@@ -15,13 +15,8 @@ inheritance. All AWS calls use moto, so no real credentials are needed.
 
 from __future__ import annotations
 
-import asyncio
-import os
-from typing import Generator
-
 import pytest
 import pytest_asyncio
-
 from sentinel_api.deps import set_neo4j_client, set_store
 from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient

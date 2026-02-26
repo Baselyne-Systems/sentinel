@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-
-from sentinel_core.models.nodes import AWSAccount, EC2Instance, S3Bucket, SecurityGroup
+from sentinel_core.models.nodes import S3Bucket, SecurityGroup
 from sentinel_perception.graph_builder import GraphBuilder, ScanResult
 
 ACCOUNT_ID = "123456789012"
@@ -66,7 +65,7 @@ async def test_full_scan_discovers_s3_buckets(
     with patch(
         "sentinel_perception.graph_builder.get_session", return_value=aws_session
     ):
-        result = await builder.full_scan(
+        await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],
         )

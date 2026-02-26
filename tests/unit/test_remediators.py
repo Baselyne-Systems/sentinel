@@ -9,12 +9,9 @@ Each remediator is tested with a mocked boto3 session to verify:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from sentinel_remediation.remediators import cloudtrail, ec2, rds, s3
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

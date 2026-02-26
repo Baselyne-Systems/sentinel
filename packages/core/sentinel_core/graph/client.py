@@ -19,8 +19,9 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
 
@@ -86,7 +87,7 @@ class Neo4jClient:
             self._driver = None
             logger.info("Neo4j connection closed")
 
-    async def __aenter__(self) -> "Neo4jClient":
+    async def __aenter__(self) -> Neo4jClient:
         await self.connect()
         return self
 

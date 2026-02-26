@@ -13,8 +13,7 @@ Creates a moto-mocked AWS environment with known-bad configurations:
 from __future__ import annotations
 
 import json
-from typing import Generator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import boto3
 import pytest
@@ -207,7 +206,6 @@ def iam_user_no_mfa(aws_session) -> dict:
 @pytest.fixture(scope="function")
 def public_rds_instance(aws_session, vpc_id, subnet_ids, open_sg_id):
     """RDS instance that is publicly accessible — deliberate CIS-2.3.2 violation."""
-    ec2 = aws_session.client("ec2", region_name=REGION)
     rds = aws_session.client("rds", region_name=REGION)
 
     # Create subnet group

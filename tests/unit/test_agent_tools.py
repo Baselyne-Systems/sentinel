@@ -49,11 +49,10 @@ All tests use ``AsyncMock`` for the Neo4j client — no real database required.
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from sentinel_agent.tools import AgentTools, _safe_cypher, TOOL_SCHEMAS
-
+from sentinel_agent.tools import TOOL_SCHEMAS, AgentTools, _safe_cypher
 
 # ── Cypher safety guard tests ──────────────────────────────────────────────────
 

@@ -22,7 +22,6 @@ import logging
 from typing import Any
 
 import aiosqlite
-
 from sentinel_remediation.models import RemediationJob
 
 logger = logging.getLogger(__name__)

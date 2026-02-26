@@ -9,9 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
 import pytest_asyncio
-
 from sentinel_api.store import SentinelStore
 from sentinel_remediation.models import JobStatus, RemediationJob, RemediationProposal
 
@@ -140,7 +138,6 @@ async def test_list_scan_jobs_empty(store: SentinelStore):
 
 async def test_list_scan_jobs_newest_first(store: SentinelStore):
     """list_scan_jobs returns jobs sorted newest-first by started_at."""
-    from time import sleep
 
     job1 = _scan_job(job_id="job-a")
     job1["started_at"] = "2024-01-01T10:00:00+00:00"
@@ -316,7 +313,6 @@ async def test_upsert_account_is_idempotent(store: SentinelStore):
 async def test_upsert_preserves_registered_at(store: SentinelStore):
     """On upsert (conflict), registered_at is preserved from original insert."""
     acct = _account()
-    original_registered_at = acct["registered_at"]
     await store.upsert_account(acct)
 
     new_now = "2030-01-01T00:00:00+00:00"

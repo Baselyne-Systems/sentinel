@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from sentinel_core.models.enums import PostureFlag, ResourceType
 from sentinel_core.models.nodes import IAMPolicy, IAMRole, IAMUser
 from sentinel_perception.connectors.aws import iam

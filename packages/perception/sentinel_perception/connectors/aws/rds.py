@@ -8,10 +8,10 @@ import logging
 from typing import Any
 
 import boto3
-
 from sentinel_core.models.edges import InVPC, MemberOfSG
 from sentinel_core.models.enums import PostureFlag
 from sentinel_core.models.nodes import GraphNode, RDSInstance
+
 from sentinel_perception.connectors.aws.base import paginate, run_sync
 
 logger = logging.getLogger(__name__)

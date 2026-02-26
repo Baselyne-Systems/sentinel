@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from sentinel_core.models.enums import PostureFlag, ResourceType
 from sentinel_core.models.nodes import S3Bucket
 from sentinel_perception.connectors.aws import s3

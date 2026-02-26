@@ -21,10 +21,9 @@ Run::
 from __future__ import annotations
 
 import pytest
-
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.models.edges import InVPC, MemberOfSG
-from sentinel_core.models.nodes import EC2Instance, S3Bucket, SecurityGroup, VPC
+from sentinel_core.models.nodes import VPC, EC2Instance, S3Bucket, SecurityGroup
 
 pytestmark = pytest.mark.benchmark
 
@@ -120,8 +119,7 @@ def test_query_public_s3_buckets(benchmark, seeded_graph, event_loop):
             )
         return event_loop.run_until_complete(_q())
 
-    results = benchmark(run)
-    # The last call's result is available in results
+    benchmark(run)
     actual = run()
     print(f"\n  public S3 query → {benchmark.stats['mean']*1000:.1f} ms/round, {len(actual)} rows")
     assert benchmark.stats["mean"] < 5.0, "Query should complete in <5s"

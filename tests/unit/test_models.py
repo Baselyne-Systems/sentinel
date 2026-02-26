@@ -2,31 +2,19 @@
 
 from __future__ import annotations
 
-import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 
+from sentinel_core.models.edges import (
+    HasAttachedPolicy,
+    InVPC,
+)
 from sentinel_core.models.enums import CloudProvider, EdgeType, PostureFlag, ResourceType
 from sentinel_core.models.nodes import (
-    AWSAccount,
     EC2Instance,
-    GraphNode,
-    IAMPolicy,
-    IAMRole,
     IAMUser,
-    LambdaFunction,
     RDSInstance,
     S3Bucket,
     SecurityGroup,
-    VPC,
-)
-from sentinel_core.models.edges import (
-    CanAssume,
-    ExecutesAs,
-    GraphEdge,
-    HasAttachedPolicy,
-    HasResource,
-    InVPC,
-    MemberOfSG,
 )
 
 

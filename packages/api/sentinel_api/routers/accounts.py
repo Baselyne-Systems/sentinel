@@ -14,7 +14,7 @@ survive API restarts.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -80,7 +80,7 @@ async def register_account(body: AccountRegistration, store: StoreDep) -> dict[s
 
     For simple same-account scans (AWS_REGIONS env var), registration is optional.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     existing = await store.get_account(body.account_id)
     account: dict[str, Any] = {
         "account_id": body.account_id,

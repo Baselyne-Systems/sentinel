@@ -13,10 +13,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
-
 from sentinel_remediation.models import JobStatus, RemediationAction
 from sentinel_remediation.planner import RemediationPlanner
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

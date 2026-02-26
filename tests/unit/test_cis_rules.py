@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from sentinel_core.knowledge.rules import ALL_RULES, RULES_BY_ID, CISRule
 from sentinel_core.models.enums import ResourceType
 

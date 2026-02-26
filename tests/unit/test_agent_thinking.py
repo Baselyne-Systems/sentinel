@@ -22,7 +22,6 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from sentinel_agent.agent import AgentSettings, SentinelAgent
 from sentinel_agent.models import (
     AnalysisCompleteEvent,

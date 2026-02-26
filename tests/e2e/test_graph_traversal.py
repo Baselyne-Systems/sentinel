@@ -17,10 +17,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.graph.queries import GraphQueries
-from sentinel_core.models.enums import PostureFlag
 from sentinel_perception.graph_builder import GraphBuilder
 
 ACCOUNT_ID = "123456789012"
@@ -260,8 +258,8 @@ async def test_posture_summary_counts(
     - HIGH findings (IAM no MFA, unencrypted RDS, star policy)
     """
     builder = GraphBuilder(clean_db)
-    from sentinel_core.knowledge.evaluator import PostureEvaluator
     from sentinel_core.graph.queries import GraphQueries
+    from sentinel_core.knowledge.evaluator import PostureEvaluator
 
     with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
         await builder.full_scan(account_id=ACCOUNT_ID, regions=[REGION])

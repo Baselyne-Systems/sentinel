@@ -19,10 +19,7 @@ Run::
 
 from __future__ import annotations
 
-import time
-
 import pytest
-
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.knowledge.evaluator import PostureEvaluator
 from sentinel_core.models.nodes import RDSInstance, S3Bucket, SecurityGroup

@@ -35,10 +35,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Union
 
 from pydantic import BaseModel, Field
-
 
 # ── SSE Event types ────────────────────────────────────────────────────────────
 
@@ -109,7 +107,7 @@ class AnalysisCompleteEvent:
         event: Fixed discriminator ``"analysis_complete"``.
     """
 
-    result: "AnalysisResult"
+    result: AnalysisResult
     event: str = field(default="analysis_complete", init=False)
 
     def to_sse(self) -> str:
@@ -164,7 +162,7 @@ class ErrorEvent:
 
 
 # Union type used as the return/yield type annotation throughout the agent layer.
-SSEEvent = Union[TextDeltaEvent, ThinkingDeltaEvent, ToolUseEvent, AnalysisCompleteEvent, ErrorEvent]
+SSEEvent = TextDeltaEvent | ThinkingDeltaEvent | ToolUseEvent | AnalysisCompleteEvent | ErrorEvent
 
 
 # ── Structured output model ────────────────────────────────────────────────────

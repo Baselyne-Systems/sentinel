@@ -14,10 +14,10 @@ from urllib.parse import unquote
 
 import boto3
 import botocore.exceptions
-
 from sentinel_core.models.edges import CanAssume, HasAttachedPolicy
 from sentinel_core.models.enums import PostureFlag
 from sentinel_core.models.nodes import GraphNode, IAMPolicy, IAMRole, IAMUser
+
 from sentinel_perception.connectors.aws.base import paginate, run_sync, safe_get
 
 logger = logging.getLogger(__name__)

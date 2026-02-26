@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
 from sentinel_core.models.enums import PostureFlag, ResourceType
-from sentinel_core.models.nodes import EC2Instance, SecurityGroup, Subnet, VPC
+from sentinel_core.models.nodes import VPC, EC2Instance, SecurityGroup, Subnet
 from sentinel_perception.connectors.aws import ec2
 
 ACCOUNT_ID = "123456789012"

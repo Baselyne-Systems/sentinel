@@ -20,13 +20,11 @@ Test strategy:
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
 from sentinel_api.deps import set_neo4j_client, set_store
 from sentinel_api.main import create_app
 from sentinel_api.store import SentinelStore

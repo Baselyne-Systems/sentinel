@@ -66,11 +66,10 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import anthropic
-
 from sentinel_core.graph.client import Neo4jClient
 
 from sentinel_agent.models import (
@@ -461,7 +460,7 @@ class SentinelAgent:
             ``TextDeltaEvent``, ``ThinkingDeltaEvent``, and ``ToolUseEvent``
             objects.
         """
-        for round_num in range(self._MAX_TOOL_ROUNDS):
+        for _round_num in range(self._MAX_TOOL_ROUNDS):
             tool_use_blocks: list[dict[str, Any]] = []
 
             # Build the API call parameters; add thinking params when opted in.

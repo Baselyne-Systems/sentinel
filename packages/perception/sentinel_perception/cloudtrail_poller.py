@@ -9,13 +9,13 @@ Phase 2 upgrade path: Replace with Kinesis/SQS event stream subscription
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import boto3
-
 from sentinel_core.graph.client import Neo4jClient
+
 from sentinel_perception.connectors.aws.base import get_session, run_sync
 from sentinel_perception.graph_builder import GraphBuilder
 
@@ -88,7 +88,7 @@ class CloudTrailPoller:
         self._assume_role_arn = assume_role_arn
         self._running = False
         self._task: asyncio.Task | None = None
-        self._last_poll: datetime = datetime.now(timezone.utc) - timedelta(minutes=5)
+        self._last_poll: datetime = datetime.now(UTC) - timedelta(minutes=5)
 
     async def start(self) -> None:
         """Start the background polling loop."""
@@ -107,10 +107,8 @@ class CloudTrailPoller:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         logger.info("CloudTrail poller stopped")
 
     async def _poll_loop(self) -> None:
@@ -125,7 +123,7 @@ class CloudTrailPoller:
 
     async def _poll_once(self) -> None:
         """Poll CloudTrail for events since last poll and trigger re-scans."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         start_time = self._last_poll
 
         for region in self._regions:

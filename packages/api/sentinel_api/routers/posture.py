@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query
+from sentinel_core.knowledge.rules import ALL_RULES
 
 from sentinel_api.deps import EvaluatorDep, QueriesDep
 from sentinel_api.schemas import (
@@ -18,7 +19,6 @@ from sentinel_api.schemas import (
     FindingResponse,
     PostureSummaryResponse,
 )
-from sentinel_core.knowledge.rules import ALL_RULES
 
 router = APIRouter(prefix="/posture", tags=["posture"])
 

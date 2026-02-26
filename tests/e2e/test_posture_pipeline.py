@@ -17,12 +17,9 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.graph.queries import GraphQueries
 from sentinel_core.knowledge.evaluator import PostureEvaluator
-from sentinel_core.knowledge.rules import RULES_BY_ID
-from sentinel_core.models.enums import PostureFlag
 from sentinel_perception.graph_builder import GraphBuilder
 
 ACCOUNT_ID = "123456789012"

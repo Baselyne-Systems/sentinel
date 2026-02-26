@@ -41,16 +41,12 @@ Two stream-mock configurations are used:
 
 from __future__ import annotations
 
-import json
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from sentinel_agent.agent import AgentSettings, SentinelAgent, _parse_analysis_xml
 from sentinel_agent.models import AnalysisCompleteEvent, ErrorEvent, TextDeltaEvent, ToolUseEvent
-
 
 # ── XML parsing tests ──────────────────────────────────────────────────────────
 

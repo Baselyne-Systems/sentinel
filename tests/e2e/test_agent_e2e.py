@@ -34,11 +34,9 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
-import pytest_asyncio
-
 from sentinel_agent.agent import AgentSettings, SentinelAgent
 from sentinel_agent.models import AnalysisCompleteEvent, ErrorEvent, TextDeltaEvent
 from sentinel_core.graph.client import Neo4jClient
@@ -236,7 +234,7 @@ async def test_analyze_finding_sse_wire_format(clean_db: Neo4jClient, agent_sett
     async for event in agent.analyze_finding("sg-e2e-test", "123456789012"):
         sse = event.to_sse()
         assert sse.startswith("data: "), f"SSE must start with 'data: ', got: {sse[:30]}"
-        assert sse.endswith("\n\n"), f"SSE must end with double newline"
+        assert sse.endswith("\n\n"), "SSE must end with double newline"
         payload = json.loads(sse[6:].strip())
         assert "event" in payload
         sse_lines.append(payload)

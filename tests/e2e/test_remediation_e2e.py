@@ -14,18 +14,16 @@ so no real AWS credentials are required.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
-
 from sentinel_core.graph.client import Neo4jClient
-from sentinel_core.models.enums import PostureFlag, ResourceType
+from sentinel_core.models.enums import PostureFlag
 from sentinel_core.models.nodes import RDSInstance, S3Bucket
 from sentinel_remediation.executor import RemediationExecutor
 from sentinel_remediation.models import JobStatus, RemediationAction
 from sentinel_remediation.planner import RemediationPlanner
-
 
 pytestmark = pytest.mark.e2e
 

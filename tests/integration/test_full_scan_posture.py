@@ -7,12 +7,9 @@ all upserted nodes and edges for assertion.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
-
-from sentinel_core.knowledge.evaluator import PostureEvaluator
-from sentinel_core.knowledge.rules import RULES_BY_ID
 from sentinel_core.models.enums import PostureFlag
 from sentinel_core.models.nodes import (
     IAMUser,
@@ -243,7 +240,7 @@ async def test_evaluation_stamps_node_with_cis_2_1_2(
     builder = GraphBuilder(client)
 
     with patch("sentinel_perception.graph_builder.get_session", return_value=aws_session):
-        result = await builder.full_scan(
+        await builder.full_scan(
             account_id=ACCOUNT_ID,
             regions=[REGION],
         )

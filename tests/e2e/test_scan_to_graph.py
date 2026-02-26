@@ -16,7 +16,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.graph.queries import GraphQueries
 from sentinel_core.models.enums import PostureFlag, ResourceType

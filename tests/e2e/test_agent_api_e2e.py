@@ -30,15 +30,15 @@ Strategy
 
 from __future__ import annotations
 
+import contextlib
 import json
 from contextlib import asynccontextmanager
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
 from sentinel_agent.agent import AgentSettings, SentinelAgent
 from sentinel_api.deps import get_sentinel_agent, set_neo4j_client, set_store
 from sentinel_api.main import create_app
@@ -169,10 +169,8 @@ async def _collect_sse_events(response) -> list[dict[str, Any]]:
         raw = line[5:].strip()
         if raw == "[DONE]":
             break
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             events.append(json.loads(raw))
-        except json.JSONDecodeError:
-            pass
     return events
 
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends
-
 from sentinel_agent.agent import AgentSettings, SentinelAgent
-from sentinel_api.config import Settings, get_settings
-from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.graph.queries import GraphQueries
 from sentinel_core.knowledge.evaluator import PostureEvaluator
+
+from sentinel_api.config import Settings, get_settings
+from sentinel_api.store import SentinelStore
 
 # Module-level singletons (initialized at startup)
 _neo4j_client: Neo4jClient | None = None

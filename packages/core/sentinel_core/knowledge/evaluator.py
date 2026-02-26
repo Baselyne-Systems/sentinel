@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.knowledge.rules import ALL_RULES, CISRule
@@ -26,7 +26,7 @@ class Finding:
     node_name: str = ""
     posture_flag: str = ""
     remediation_hint: str = ""
-    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    detected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         return {

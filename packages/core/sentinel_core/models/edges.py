@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -12,7 +12,7 @@ from sentinel_core.models.enums import EdgeType
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class GraphEdge(BaseModel):
@@ -32,9 +32,7 @@ class GraphEdge(BaseModel):
         data["created_at"] = self.created_at.isoformat()
         # Neo4j only accepts primitives; serialize any dict / list-of-dict fields.
         for key, value in list(data.items()):
-            if isinstance(value, dict):
-                data[key] = json.dumps(value)
-            elif isinstance(value, list) and value and isinstance(value[0], dict):
+            if isinstance(value, dict) or (isinstance(value, list) and value and isinstance(value[0], dict)):
                 data[key] = json.dumps(value)
         return data
 

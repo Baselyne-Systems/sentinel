@@ -17,7 +17,6 @@ Run::
 from __future__ import annotations
 
 import pytest
-
 from sentinel_core.models.nodes import EC2Instance, IAMRole, RDSInstance, S3Bucket, SecurityGroup
 
 pytestmark = pytest.mark.benchmark

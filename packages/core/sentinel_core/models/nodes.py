@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -12,7 +12,7 @@ from sentinel_core.models.enums import CloudProvider, PostureFlag, ResourceType
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class GraphNode(BaseModel):
@@ -49,9 +49,7 @@ class GraphNode(BaseModel):
         data["discovered_at"] = self.discovered_at.isoformat()
         # Serialize any remaining dict or list-of-dict fields to JSON strings.
         for key, value in list(data.items()):
-            if isinstance(value, dict):
-                data[key] = json.dumps(value)
-            elif isinstance(value, list) and value and isinstance(value[0], dict):
+            if isinstance(value, dict) or (isinstance(value, list) and value and isinstance(value[0], dict)):
                 data[key] = json.dumps(value)
         return data
 

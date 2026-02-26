@@ -31,11 +31,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import boto3
-
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.knowledge.evaluator import Finding, PostureEvaluator
 from sentinel_core.models.edges import ExecutesAs, GraphEdge, HasResource
 from sentinel_core.models.nodes import AWSAccount, GraphNode, IAMRole, LambdaFunction
+
 from sentinel_perception.connectors.aws import ec2, iam, lambda_, rds, s3
 from sentinel_perception.connectors.aws.base import get_session
 
@@ -178,7 +178,7 @@ class GraphBuilder:
         ]
         region_results = await asyncio.gather(*region_tasks, return_exceptions=True)
 
-        for region, region_result in zip(regions, region_results):
+        for region, region_result in zip(regions, region_results, strict=False):
             if isinstance(region_result, Exception):
                 error = f"Region {region} scan failed: {region_result}"
                 logger.error(error)
@@ -315,7 +315,7 @@ class GraphBuilder:
         connector_results = await asyncio.gather(*connector_tasks, return_exceptions=True)
 
         connector_names = ["EC2", "Lambda", "RDS"]
-        for name, connector_result in zip(connector_names, connector_results):
+        for name, connector_result in zip(connector_names, connector_results, strict=False):
             if isinstance(connector_result, Exception):
                 error = f"{name} connector [{region}] failed: {connector_result}"
                 logger.error(error)

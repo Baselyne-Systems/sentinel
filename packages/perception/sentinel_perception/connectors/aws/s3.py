@@ -10,10 +10,9 @@ import logging
 from typing import Any
 
 import boto3
-import botocore.exceptions
-
 from sentinel_core.models.enums import PostureFlag
 from sentinel_core.models.nodes import GraphNode, S3Bucket
+
 from sentinel_perception.connectors.aws.base import run_sync, safe_get
 
 logger = logging.getLogger(__name__)

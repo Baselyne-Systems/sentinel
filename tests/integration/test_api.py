@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-
 from sentinel_api.main import create_app
 from sentinel_core.knowledge.rules import ALL_RULES
 
@@ -66,10 +65,12 @@ def api_client(mock_neo4j):
             mock_store_instance.list_accounts = AsyncMock(return_value=[])
             mock_store_instance.delete_account = AsyncMock(return_value=None)
 
-            with patch("sentinel_api.deps.set_neo4j_client"):
-                with patch("sentinel_api.deps.get_neo4j_client", return_value=instance):
-                    with TestClient(app) as client:
-                        yield client, instance
+            with (
+                patch("sentinel_api.deps.set_neo4j_client"),
+                patch("sentinel_api.deps.get_neo4j_client", return_value=instance),
+                TestClient(app) as client,
+            ):
+                yield client, instance
 
 
 def test_health_endpoint(api_client):

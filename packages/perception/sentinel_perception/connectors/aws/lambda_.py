@@ -8,9 +8,9 @@ import logging
 from typing import Any
 
 import boto3
-
-from sentinel_core.models.edges import ExecutesAs, InVPC, MemberOfSG
+from sentinel_core.models.edges import InVPC, MemberOfSG
 from sentinel_core.models.nodes import GraphNode, LambdaFunction
+
 from sentinel_perception.connectors.aws.base import paginate, run_sync
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,6 @@ async def discover(
 
         vpc_config = raw.get("VpcConfig") or {}
         sg_ids = vpc_config.get("SecurityGroupIds", [])
-        subnet_ids = vpc_config.get("SubnetIds", [])
         vpc_id = vpc_config.get("VpcId")
 
         env_vars = raw.get("Environment", {}).get("Variables", {})
