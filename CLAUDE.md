@@ -93,6 +93,12 @@ SENTINEL is an autonomous cloud security architect agent that continuously obser
 | `packages/api/sentinel_api/routers/posture.py` | /api/v1/posture endpoints |
 | `packages/api/sentinel_api/routers/scan.py` | /api/v1/scan endpoints |
 | `packages/api/sentinel_api/routers/accounts.py` | /api/v1/accounts endpoints |
+| `packages/agent/sentinel_agent/backends/base.py` | LLMBackend Protocol + stream event dataclasses |
+| `packages/agent/sentinel_agent/backends/anthropic.py` | AnthropicBackend (streaming tool-use, extended thinking) |
+| `packages/agent/sentinel_agent/backends/openai_.py` | OpenAIBackend (any OpenAI-compatible endpoint) |
+| `packages/agent/sentinel_agent/backends/__init__.py` | create_backend() factory |
+| `packages/agent/sentinel_agent/agent.py` | SentinelAgent — backend-agnostic tool-use loop |
+| `packages/agent/sentinel_agent/tools.py` | AgentTools, TOOL_SCHEMAS, to_openai_tools() |
 | `frontend/app/page.tsx` | Posture dashboard |
 | `frontend/app/graph/page.tsx` | Graph explorer |
 | `frontend/app/findings/page.tsx` | Findings table |
@@ -118,8 +124,13 @@ AWS_ASSUME_ROLE_ARN=          # optional, for cross-account
 API_PORT=8000
 ENABLE_RAW_CYPHER=false       # dev feature flag for POST /graph/query
 
-# Phase 2 (reserved)
+# AI Agent
 ANTHROPIC_API_KEY=
+AGENT_PROVIDER=anthropic       # "anthropic" (default) or "openai"
+# For OpenAI-compatible providers (Groq, Ollama, Together, vLLM):
+# AGENT_PROVIDER=openai
+# OPENAI_API_KEY=sk-...
+# AGENT_BASE_URL=http://localhost:11434/v1
 ```
 
 ---

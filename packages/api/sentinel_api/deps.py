@@ -62,6 +62,9 @@ def get_sentinel_agent(
         agent_max_tokens=settings.agent_max_tokens,
         enable_thinking=settings.agent_enable_thinking,
         thinking_budget_tokens=settings.agent_thinking_budget_tokens,
+        provider=settings.agent_provider,
+        openai_api_key=settings.openai_api_key,
+        openai_base_url=settings.agent_base_url,
     )
     return SentinelAgent(neo4j_client=client, settings=agent_settings)
 

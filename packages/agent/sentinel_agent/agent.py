@@ -69,9 +69,15 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-import anthropic
 from sentinel_core.graph.client import Neo4jClient
 
+from sentinel_agent.backends import (
+    LLMBackend,
+    TextChunk,
+    ThinkingChunk,
+    TurnComplete,
+    create_backend,
+)
 from sentinel_agent.models import (
     AnalysisCompleteEvent,
     AnalysisResult,
@@ -83,7 +89,7 @@ from sentinel_agent.models import (
     ToolUseEvent,
 )
 from sentinel_agent.prompts import SYSTEM_PROMPT, build_brief_message, build_finding_message
-from sentinel_agent.tools import TOOL_SCHEMAS, AgentTools
+from sentinel_agent.tools import AgentTools
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +109,16 @@ class AgentSettings:
     from the API's ``Settings`` object.
 
     Attributes:
-        anthropic_api_key: Anthropic API key.  Must not be empty.
-        agent_model: Anthropic model ID to use for analysis.
+        anthropic_api_key: Anthropic API key.  Must not be empty when using
+            the Anthropic provider.
+        agent_model: Model ID to use for analysis.
             Defaults to ``"claude-opus-4-6"``.
-        agent_max_tokens: Maximum tokens in a single Claude response turn.
+        agent_max_tokens: Maximum tokens in a single response turn.
             Defaults to 4096 — sufficient for full analysis XML with IaC.
+        provider: LLM provider.  ``"anthropic"`` (default) or ``"openai"``
+            (for any OpenAI-compatible endpoint).
+        openai_api_key: API key for OpenAI-compatible providers.
+        openai_base_url: Optional base URL override (e.g. Ollama, Groq).
     """
 
     anthropic_api_key: str
@@ -115,6 +126,9 @@ class AgentSettings:
     agent_max_tokens: int = 4096
     enable_thinking: bool = False
     thinking_budget_tokens: int = 8000
+    provider: str = "anthropic"
+    openai_api_key: str = ""
+    openai_base_url: str = ""
 
 
 # ── XML parsing helpers ────────────────────────────────────────────────────────
@@ -259,7 +273,7 @@ class SentinelAgent:
     _MAX_TOOL_ROUNDS = 8
 
     def __init__(self, neo4j_client: Neo4jClient, settings: AgentSettings) -> None:
-        self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._backend: LLMBackend = create_backend(settings)
         self._model = settings.agent_model
         self._max_tokens = settings.agent_max_tokens
         self._enable_thinking = settings.enable_thinking
@@ -461,122 +475,84 @@ class SentinelAgent:
             objects.
         """
         for _round_num in range(self._MAX_TOOL_ROUNDS):
-            tool_use_blocks: list[dict[str, Any]] = []
+            turn_done = False
 
-            # Build the API call parameters; add thinking params when opted in.
-            # max_tokens must exceed budget_tokens — raise it automatically.
-            effective_max_tokens = self._max_tokens
-            api_kwargs: dict[str, Any] = {
-                "model": self._model,
-                "system": SYSTEM_PROMPT,
-                "tools": TOOL_SCHEMAS,
-                "messages": messages,
-            }
-            if enable_thinking:
-                effective_max_tokens = max(self._max_tokens, self._thinking_budget_tokens + 2048)
-                api_kwargs["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": self._thinking_budget_tokens,
-                }
-                api_kwargs["betas"] = ["interleaved-thinking-2025-05-14"]
-            api_kwargs["max_tokens"] = effective_max_tokens
+            async for event in self._backend.stream_turn(
+                messages=messages,
+                system=SYSTEM_PROMPT,
+                max_tokens=self._max_tokens,
+                enable_thinking=enable_thinking,
+                thinking_budget_tokens=self._thinking_budget_tokens,
+            ):
+                if isinstance(event, TextChunk):
+                    yield TextDeltaEvent(text=event.text)
 
-            async with self._client.messages.stream(**api_kwargs) as stream:
-                # Stream individual tokens to the client in real time.
-                # Thinking deltas (type "thinking_delta") are emitted separately
-                # so the frontend can render them in a collapsible panel.
-                async for chunk in stream:
-                    if chunk.type == "content_block_delta":
-                        delta = chunk.delta
-                        if delta.type == "text_delta":
-                            yield TextDeltaEvent(text=delta.text)
-                        elif enable_thinking and delta.type == "thinking_delta":
-                            yield ThinkingDeltaEvent(thinking=delta.thinking)
+                elif isinstance(event, ThinkingChunk):
+                    yield ThinkingDeltaEvent(thinking=event.thinking)
 
-                # Get the complete final message to read stop_reason and all
-                # content blocks (text, thinking + signature, tool_use).
-                final_message = await stream.get_final_message()
-                stop_reason = final_message.stop_reason
+                elif isinstance(event, TurnComplete):
+                    if event.stop_reason == "end_turn" or not event.tool_calls:
+                        # Done — signal caller to stop accumulating
+                        turn_done = True
+                        break
 
-            # Reconstruct the full assistant content block list for the message
-            # history.  The Anthropic API requires that all block types (thinking,
-            # text, tool_use) appear together in a single assistant message and
-            # that thinking blocks carry their original ``signature`` field.
-            assistant_content: list[dict[str, Any]] = []
-            for block in final_message.content:
-                if block.type == "thinking":
-                    # Preserve the signature — required for multi-turn thinking
-                    assistant_content.append(
+                    # Tool-use turn: append OpenAI-format assistant message
+                    messages.append(
                         {
-                            "type": "thinking",
-                            "thinking": block.thinking,
-                            "signature": block.signature,
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.name,
+                                        "arguments": json.dumps(tc.arguments),
+                                    },
+                                }
+                                for tc in event.tool_calls
+                            ],
                         }
                     )
-                elif block.type == "text":
-                    if block.text:
-                        assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    tool_use_blocks.append(
-                        {"id": block.id, "name": block.name, "input": block.input}
-                    )
-                    assistant_content.append(
-                        {
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": block.input,
-                        }
-                    )
-            messages.append({"role": "assistant", "content": assistant_content})
 
-            # If Claude is done (or produced no tool calls), exit the loop
-            if stop_reason == "end_turn" or not tool_use_blocks:
-                break
+                    # Dispatch each tool and emit ToolUseEvent
+                    for tc in event.tool_calls:
+                        raw_result = await self._tools.dispatch(tc.name, tc.arguments)
 
-            # Dispatch each tool call and collect results for the next turn
-            tool_results: list[dict[str, Any]] = []
-            for tb in tool_use_blocks:
-                raw_result = await self._tools.dispatch(tb["name"], tb["input"])
+                        try:
+                            parsed = json.loads(raw_result)
+                            if isinstance(parsed, list):
+                                summary = f"Returned {len(parsed)} item(s)"
+                            elif isinstance(parsed, dict) and "error" in parsed:
+                                summary = f"Error: {parsed['error']}"
+                            elif parsed is None:
+                                summary = "No result found"
+                            else:
+                                summary = f"Returned resource: {parsed.get('resource_type', 'node')}"
+                        except Exception:
+                            summary = "Result received"
 
-                # Build a concise human-readable summary for the ToolUseEvent
-                try:
-                    parsed = json.loads(raw_result)
-                    if isinstance(parsed, list):
-                        summary = f"Returned {len(parsed)} item(s)"
-                    elif isinstance(parsed, dict) and "error" in parsed:
-                        summary = f"Error: {parsed['error']}"
-                    elif parsed is None:
-                        summary = "No result found"
-                    else:
-                        summary = f"Returned resource: {parsed.get('resource_type', 'node')}"
-                except Exception:
-                    summary = "Result received"
+                        yield ToolUseEvent(
+                            tool_name=tc.name,
+                            tool_input=tc.arguments,
+                            tool_result_summary=summary,
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": raw_result,
+                            }
+                        )
 
-                yield ToolUseEvent(
-                    tool_name=tb["name"],
-                    tool_input=tb["input"],
-                    tool_result_summary=summary,
-                )
-                # Append the tool result for the next Anthropic API call
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tb["id"],
-                        "content": raw_result,
-                    }
-                )
+            if turn_done:
+                return
 
-            # The tool results are returned as the next user turn
-            messages.append({"role": "user", "content": tool_results})
-
-        else:
-            # for…else fires only when the loop was *not* broken by a normal exit
-            logger.warning(
-                "Agent reached max tool rounds (%d) for conversation of %d messages",
-                self._MAX_TOOL_ROUNDS,
-                len(messages),
-            )
+        logger.warning(
+            "Agent reached max tool rounds (%d) for conversation of %d messages",
+            self._MAX_TOOL_ROUNDS,
+            len(messages),
+        )
 
     async def _cache_result(self, node_id: str, result: AnalysisResult) -> None:
         """

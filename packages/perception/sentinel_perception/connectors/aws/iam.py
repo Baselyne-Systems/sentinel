@@ -139,7 +139,7 @@ async def discover(
         has_console = login_profile is not None and "LoginProfile" in login_profile
 
         # Attached policies
-        attached_arns: list[str] = []
+        policy_arns: list[str] = []
         try:
             attached = await run_sync(
                 paginate,
@@ -148,7 +148,7 @@ async def discover(
                 "AttachedPolicies",
                 UserName=raw["UserName"],
             )
-            attached_arns = [p["PolicyArn"] for p in attached]
+            policy_arns = [p["PolicyArn"] for p in attached]
         except botocore.exceptions.ClientError:
             pass
 
@@ -162,9 +162,9 @@ async def discover(
         )
         key_count = len(key_list.get("AccessKeyMetadata", []))
 
-        posture_flags: list[PostureFlag] = []
+        user_posture_flags: list[PostureFlag] = []
         if has_console and not has_mfa:
-            posture_flags.append(PostureFlag.IAM_NO_MFA)
+            user_posture_flags.append(PostureFlag.IAM_NO_MFA)
 
         user = IAMUser(
             node_id=user_id,
@@ -177,13 +177,13 @@ async def discover(
             has_console_access=has_console,
             password_last_used=raw.get("PasswordLastUsed"),
             access_key_count=key_count,
-            attached_policy_arns=attached_arns,
-            posture_flags=posture_flags,
+            attached_policy_arns=policy_arns,
+            posture_flags=user_posture_flags,
         )
         nodes.append(user)
 
         # Edges: user → attached policies
-        for policy_arn in attached_arns:
+        for policy_arn in policy_arns:
             policy_id = policy_arn.split(":")[-1].replace("policy/", "")
             edges.append(
                 HasAttachedPolicy(
@@ -223,9 +223,9 @@ async def discover(
             logger.debug("get_policy_version for %s: %s", policy_arn, e)
 
         has_star = _has_star_policy(document)
-        posture_flags: list[PostureFlag] = []
+        flags: list[PostureFlag] = []
         if has_star:
-            posture_flags.append(PostureFlag.IAM_STAR_POLICY)
+            flags.append(PostureFlag.IAM_STAR_POLICY)
 
         policy = IAMPolicy(
             node_id=policy_id,
@@ -238,7 +238,7 @@ async def discover(
             is_aws_managed=False,
             attachment_count=raw.get("AttachmentCount", 0),
             path=raw.get("Path", "/"),
-            posture_flags=posture_flags,
+            posture_flags=flags,
         )
         nodes.append(policy)
 

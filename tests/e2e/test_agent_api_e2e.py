@@ -32,14 +32,14 @@ from __future__ import annotations
 
 import contextlib
 import json
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sentinel_agent.agent import AgentSettings, SentinelAgent
+from sentinel_agent.backends.base import TextChunk, ThinkingChunk, TurnComplete
 from sentinel_api.deps import get_sentinel_agent, set_neo4j_client, set_store
 from sentinel_api.main import create_app
 from sentinel_api.store import SentinelStore
@@ -77,79 +77,26 @@ THINKING_TEXT = "Let me first look at the blast radius then assess the risk..."
 pytestmark = pytest.mark.e2e
 
 
-# ── Anthropic mock helpers ─────────────────────────────────────────────────────
+# ── MockBackend helpers ────────────────────────────────────────────────────────
 
 
-def _text_chunk(text: str) -> MagicMock:
-    c = MagicMock()
-    c.type = "content_block_delta"
-    c.delta = MagicMock()
-    c.delta.type = "text_delta"
-    c.delta.text = text
-    return c
+class _MockBackend:
+    """Simple backend mock for E2E tests — yields pre-configured events."""
 
+    def __init__(self, *, with_thinking: bool = False) -> None:
+        self._with_thinking = with_thinking
 
-def _thinking_chunk(text: str) -> MagicMock:
-    c = MagicMock()
-    c.type = "content_block_delta"
-    c.delta = MagicMock()
-    c.delta.type = "thinking_delta"
-    c.delta.thinking = text
-    return c
-
-
-def _text_block(text: str) -> MagicMock:
-    b = MagicMock()
-    b.type = "text"
-    b.text = text
-    return b
-
-
-def _thinking_block(text: str, sig: str = "sig-test") -> MagicMock:
-    b = MagicMock()
-    b.type = "thinking"
-    b.thinking = text
-    b.signature = sig
-    return b
-
-
-def _build_mock_anthropic(*, with_thinking: bool = False) -> MagicMock:
-    """
-    Build a mock Anthropic client.
-
-    When ``with_thinking=True`` the stream emits a thinking_delta chunk
-    before the text chunk and the final message includes a thinking block.
-    """
-    client = MagicMock()
-
-    if with_thinking:
-        chunks = [_thinking_chunk(THINKING_TEXT), _text_chunk(SAMPLE_XML)]
-        content = [_thinking_block(THINKING_TEXT, "sig-1"), _text_block(SAMPLE_XML)]
-    else:
-        chunks = [_text_chunk(SAMPLE_XML)]
-        content = [_text_block(SAMPLE_XML)]
-
-    final_msg = MagicMock()
-    final_msg.stop_reason = "end_turn"
-    final_msg.content = content
-
-    @asynccontextmanager
-    async def _stream_cm(*args, **kwargs):
-        class _S:
-            def __aiter__(self):
-                return self._iter()
-
-            async def _iter(self):
-                for c in chunks:
-                    yield c
-
-            async def get_final_message(self):
-                return final_msg
-
-        yield _S()
-
-    client.messages.stream = _stream_cm
-    return client
+    async def stream_turn(
+        self,
+        messages: list[dict[str, Any]],
+        system: str,
+        max_tokens: int,
+        **kwargs: Any,
+    ) -> AsyncIterator:
+        if self._with_thinking:
+            yield ThinkingChunk(thinking=THINKING_TEXT)
+        yield TextChunk(text=SAMPLE_XML)
+        yield TurnComplete(text=SAMPLE_XML, tool_calls=[], stop_reason="end_turn")
 
 
 # ── SSE parsing helper ─────────────────────────────────────────────────────────
@@ -180,11 +127,11 @@ async def _collect_sse_events(response) -> list[dict[str, Any]]:
 @pytest_asyncio.fixture()
 async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
     """
-    AsyncClient backed by real testcontainers Neo4j with mock Anthropic.
+    AsyncClient backed by real testcontainers Neo4j with a mock backend.
 
     Injects the real Neo4jClient via ``set_neo4j_client``, then overrides
-    ``get_sentinel_agent`` to return a SentinelAgent whose Anthropic client
-    is mocked — so no API key is required and responses are deterministic.
+    ``get_sentinel_agent`` to return a SentinelAgent whose backend is a
+    ``_MockBackend`` — so no API key is required and responses are deterministic.
     """
     set_neo4j_client(neo4j_client)
     set_store(job_store)
@@ -194,7 +141,7 @@ async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
             neo4j_client=neo4j_client,
             settings=AgentSettings(anthropic_api_key="test-key"),
         )
-        agent._client = _build_mock_anthropic()
+        agent._backend = _MockBackend()
         return agent
 
     app = create_app()
@@ -208,7 +155,7 @@ async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
 
 @pytest_asyncio.fixture()
 async def app_client_thinking(neo4j_client: Neo4jClient, job_store: SentinelStore):
-    """Like ``app_client`` but the mock Anthropic emits thinking chunks."""
+    """Like ``app_client`` but the mock backend emits thinking chunks."""
     set_neo4j_client(neo4j_client)
     set_store(job_store)
 
@@ -217,7 +164,7 @@ async def app_client_thinking(neo4j_client: Neo4jClient, job_store: SentinelStor
             neo4j_client=neo4j_client,
             settings=AgentSettings(anthropic_api_key="test-key"),
         )
-        agent._client = _build_mock_anthropic(with_thinking=True)
+        agent._backend = _MockBackend(with_thinking=True)
         return agent
 
     app = create_app()

@@ -88,7 +88,7 @@ Each package has its own `pyproject.toml` with `[tool.uv.sources]` workspace ref
 |---------|------|-------------------|
 | `sentinel-core` | `packages/core/` | `neo4j` (async driver), `pydantic v2` |
 | `sentinel-perception` | `packages/perception/` | `boto3` |
-| `sentinel-agent` | `packages/agent/` | `anthropic` |
+| `sentinel-agent` | `packages/agent/` | `anthropic`, `openai` |
 | `sentinel-remediation` | `packages/remediation/` | `boto3` |
 | `sentinel-api` | `packages/api/` | `fastapi`, `uvicorn`, `pydantic-settings` |
 
@@ -350,7 +350,54 @@ Not yet integrated into scans (Phase future). Polls `cloudtrail.lookup_events()`
 
 ## 5. sentinel-agent
 
-**Purpose**: LLM reasoning layer. Claude reads the graph via 4 read-only tools, reasons about risk and attack paths, and produces a structured `AnalysisResult`.
+**Purpose**: Provider-agnostic LLM reasoning layer. The agent reads the graph via 4 read-only tools, reasons about risk and attack paths, and produces a structured `AnalysisResult`. Any Anthropic or OpenAI-compatible provider can be dropped in without changing the tool-use loop.
+
+### 5.0 `backends/` — LLM provider abstraction
+
+The `backends/` sub-package isolates all provider-specific code behind a single `LLMBackend` Protocol. `SentinelAgent` calls only `backend.stream_turn(...)` and processes provider-agnostic events.
+
+**`backends/base.py`** — Protocol and stream event dataclasses:
+
+```python
+@dataclass class TextChunk:     text: str
+@dataclass class ThinkingChunk: thinking: str   # Anthropic-only
+@dataclass class ToolCallChunk: id, name, arguments: dict
+@dataclass class TurnComplete:  text, tool_calls, stop_reason
+
+class LLMBackend(Protocol):
+    def stream_turn(
+        self, messages, system, max_tokens,
+        enable_thinking=False, thinking_budget_tokens=8000
+    ) -> AsyncIterator[LLMStreamEvent]: ...
+```
+
+Messages passed to `stream_turn` are always in **OpenAI format** (`{"role": "user"|"assistant"|"tool", ...}`). Each backend translates internally.
+
+**`backends/anthropic.py`** — `AnthropicBackend`:
+- `_to_anthropic_messages()` converts OpenAI-format history to Anthropic format:
+  - `assistant` with `tool_calls` → `assistant` with `tool_use` content blocks
+  - Consecutive `tool` messages → single `user` message with `tool_result` blocks
+- `_pending_thinking_blocks` — thinking blocks (with `signature`) from the previous turn are stored here and injected into the next Anthropic-format assistant message, preserving multi-turn correctness
+- Emits `ThinkingChunk` events for `thinking_delta` stream tokens when extended thinking is active
+
+**`backends/openai_.py`** — `OpenAIBackend`:
+- Works with any OpenAI Chat Completions API: standard OpenAI, Groq, Ollama, Together AI, vLLM
+- Configurable `base_url` parameter; pass `api_key="none"` for local endpoints
+- `enable_thinking` is silently ignored (Anthropic-only feature)
+
+**`backends/__init__.py`** — `create_backend(settings) -> LLMBackend` factory:
+
+```python
+def create_backend(settings) -> LLMBackend:
+    if settings.provider == "openai":
+        return OpenAIBackend(api_key=settings.openai_api_key,
+                             model=settings.agent_model,
+                             tool_schemas=TOOL_SCHEMAS,
+                             base_url=settings.openai_base_url or None)
+    return AnthropicBackend(api_key=settings.anthropic_api_key,
+                            model=settings.agent_model,
+                            tool_schemas=TOOL_SCHEMAS)
+```
 
 ### 5.1 `models.py`
 
@@ -381,7 +428,7 @@ Stored on Neo4j as: `n.agent_analysis = json.dumps(result.model_dump())`, `n.age
 
 ### 5.2 `tools.py` — `AgentTools`
 
-4 read-only tools exposed to Claude via Anthropic's tool-use API:
+4 read-only tools available to the LLM during the tool-use loop:
 
 | Tool | What it does |
 |------|-------------|
@@ -395,7 +442,9 @@ Stored on Neo4j as: `n.agent_analysis = json.dumps(result.model_dump())`, `n.age
 - Blocks: `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`, `DROP`, `REMOVE`, `CALL` (write procedures)
 - Auto-injects `LIMIT 50` if missing
 
-`TOOL_SCHEMAS` is a list of Anthropic tool definitions (name, description, input_schema) consumed by `client.messages.create(tools=TOOL_SCHEMAS, ...)`.
+**`TOOL_SCHEMAS`** — Anthropic-format tool definitions (name, description, input_schema). Used by `AnthropicBackend` directly; `to_openai_tools(TOOL_SCHEMAS)` converts them to OpenAI function format for `OpenAIBackend`.
+
+**`to_openai_tools(schemas)`** — converts Anthropic schema shape `{name, description, input_schema}` to OpenAI shape `{type: "function", function: {name, description, parameters}}`.
 
 ### 5.3 `prompts.py`
 
@@ -413,37 +462,53 @@ async for event in agent.analyze_finding(node_id, account_id):
     yield event.to_sse().encode()
 ```
 
-Tool-use loop (max 8 rounds):
+**`AgentSettings`** (plain dataclass, no Pydantic):
+
+```python
+@dataclass
+class AgentSettings:
+    anthropic_api_key: str          # used when provider="anthropic"
+    agent_model: str = "claude-opus-4-6"
+    agent_max_tokens: int = 4096
+    enable_thinking: bool = False
+    thinking_budget_tokens: int = 8000
+    provider: str = "anthropic"     # "anthropic" | "openai"
+    openai_api_key: str = ""        # used when provider="openai"
+    openai_base_url: str = ""       # base URL override (Ollama, Groq, …)
+```
+
+**`SentinelAgent.__init__`** calls `create_backend(settings)` and stores the result as `self._backend`. No direct SDK import.
+
+**Tool-use loop** (`_run_tool_loop`, max 8 rounds):
 
 ```
-1. Seed messages with build_finding_message()
-2. stream = client.messages.stream(
-       model=settings.agent_model,
-       system=SYSTEM_PROMPT,
-       tools=TOOL_SCHEMAS,
-       messages=messages,
-   )
-3. Accumulate streamed content:
-   - On each text token → yield TextDeltaEvent
-   - On each tool_use block → collect for dispatch
-4. If stop_reason == "tool_use":
-   - For each tool: AgentTools.dispatch(tool_name, tool_input)
-   - yield ToolUseEvent (name + result summary)
-   - Append tool_result blocks to messages
-   - Go to step 2 (next round)
-5. If stop_reason == "end_turn":
-   - Parse accumulated text for <analysis>…</analysis> (regex)
-   - Build AnalysisResult from parsed XML
-   - Cache on Neo4j: SET n.agent_analysis, n.agent_analyzed_at
-   - yield AnalysisCompleteEvent(result)
-   - Break
+1. Seed messages list (OpenAI format) with build_finding_message()
+2. async for event in self._backend.stream_turn(messages, system, max_tokens, ...):
+     TextChunk      → yield TextDeltaEvent
+     ThinkingChunk  → yield ThinkingDeltaEvent
+     TurnComplete:
+       stop_reason == "end_turn" → break
+       stop_reason == "tool_use":
+         Append OpenAI-format assistant message {role, content:None, tool_calls:[…]}
+         For each tool call:
+           raw_result = await AgentTools.dispatch(name, arguments)
+           yield ToolUseEvent
+           Append {role:"tool", tool_call_id:…, content:raw_result}
+         → next round
+3. Parse accumulated text for <analysis>…</analysis> (regex)
+4. Cache on Neo4j: SET n.agent_analysis, n.agent_analyzed_at
+5. yield AnalysisCompleteEvent(result)
 ```
+
+Messages are always kept in **OpenAI format** in the agent loop. Each backend translates to its native format internally before each API call.
 
 `generate_brief(account_id, top_n)` follows the same pattern with a different initial message (top-N findings context instead of a single node).
 
-### 5.5 Extended Thinking
+### 5.5 Extended Thinking (Anthropic only)
 
-Extended thinking gives Claude a private token budget to reason step-by-step before writing its response. It is implemented using the `interleaved-thinking-2025-05-14` Anthropic beta and is opt-in at both the instance and request level.
+Extended thinking gives Claude a private token budget to reason step-by-step before writing its response. It is an Anthropic-specific feature — when `AGENT_PROVIDER=openai`, `enable_thinking` is passed to `OpenAIBackend.stream_turn` but silently ignored.
+
+Implementation lives entirely in `AnthropicBackend`. The agent loop passes `enable_thinking` and `thinking_budget_tokens` through `backend.stream_turn(...)` as keyword arguments.
 
 **Activation**
 
@@ -462,41 +527,32 @@ async for event in agent.analyze_finding(node_id, account_id, enable_thinking=Tr
 
 HTTP API: `POST /agent/findings/{node_id}/analyze?thinking=true`
 
-**API call construction**
+**AnthropicBackend API call construction**
 
-When `enable_thinking=True`, `_run_tool_loop` adds two extra parameters to every Anthropic API call:
+When `enable_thinking=True`, `AnthropicBackend.stream_turn` adds to the Anthropic API call:
 
 ```python
 api_kwargs["thinking"] = {
     "type": "enabled",
-    "budget_tokens": self._thinking_budget_tokens,   # e.g. 8000
+    "budget_tokens": thinking_budget_tokens,   # e.g. 8000
 }
 api_kwargs["betas"] = ["interleaved-thinking-2025-05-14"]
-# max_tokens is raised to max(agent_max_tokens, budget_tokens + 2048) automatically
+# max_tokens raised to max(max_tokens, budget_tokens + 2048) automatically
 ```
 
 **Thinking blocks and multi-turn correctness**
 
-The Anthropic API returns thinking content as `thinking` blocks alongside `text` and `tool_use` blocks. Each thinking block carries a cryptographic `signature`. The signature **must** be preserved verbatim in the message history for subsequent turns — the API validates it. The agent stores it explicitly:
-
-```python
-if block.type == "thinking":
-    assistant_content.append({
-        "type": "thinking",
-        "thinking": block.thinking,
-        "signature": block.signature,   # required — do not omit
-    })
-```
+The Anthropic API returns thinking content as `thinking` blocks (with a cryptographic `signature`). The signature must be preserved across turns. `AnthropicBackend` stores thinking blocks from each turn in `self._pending_thinking_blocks` and injects them into the next assistant message when converting to Anthropic format in `_to_anthropic_messages()`. They are **not** stored in the agent's shared OpenAI-format message list.
 
 **SSE streaming**
 
-When extended thinking is active, `_run_tool_loop` yields an additional event type:
+`AnthropicBackend.stream_turn` yields `ThinkingChunk` events for each `thinking_delta` token. The agent loop converts these to `ThinkingDeltaEvent` for the client:
 
 ```
 data: {"event": "thinking_delta", "thinking": "Let me check the VPC..."}\n\n
 ```
 
-`ThinkingDeltaEvent` is emitted for each `thinking_delta` content block delta, interleaved with `TextDeltaEvent` tokens as Claude reasons and then writes. The frontend `AnalysisPanel` renders thinking deltas in a collapsible "Claude's reasoning" panel.
+The frontend `AnalysisPanel` renders thinking deltas in a collapsible "Claude's reasoning" panel.
 
 **Caching**
 
@@ -1004,6 +1060,8 @@ tests/
     test_graph_builder.py  # GraphBuilder with mock Neo4j + moto
     test_agent_tools.py    # Cypher safety guard, tool schemas, dispatch
     test_agent_loop.py     # Agent streaming loop, XML parsing, caching
+    test_agent_thinking.py # Extended thinking kwargs + ThinkingChunk events
+    test_backends.py       # to_openai_tools(), AnthropicBackend message translation
     test_planner.py        # RemediationPlanner flag→action mapping
     test_remediators.py    # Each remediator with mocked boto3
     connectors/
@@ -1020,7 +1078,7 @@ tests/
     test_posture_pipeline.py   # CIS evaluation against real graph
     test_api_e2e.py        # API endpoints against live Neo4j
     test_graph_traversal.py    # Cypher attack path queries
-    test_agent_e2e.py     # Agent loop with mock Anthropic + real Neo4j
+    test_agent_api_e2e.py  # Agent HTTP API with MockBackend + real Neo4j
     test_remediation_e2e.py    # Planner + executor + real Neo4j
 ```
 
@@ -1033,6 +1091,8 @@ tests/
 **E2E tests**: marked `@pytest.mark.e2e`. Require Docker. `neo4j_container` fixture (session-scoped) starts a real Neo4j 5 Community container via `testcontainers`. `clean_db` fixture (function-scoped) wipes all nodes between tests. Run with `pytest -m e2e`.
 
 Async tests use `pytest-asyncio` with `asyncio_mode = "auto"` in `pyproject.toml` — no `@pytest.mark.asyncio` decorator needed.
+
+**Agent tests**: inject a `MockBackend` directly onto `agent._backend` — no real LLM API calls are made. `test_agent_loop.py` and `test_agent_thinking.py` use a `CapturingMockBackend` that records `stream_turn` kwargs and yields configurable event sequences. `test_backends.py` tests `AnthropicBackend._to_anthropic_messages()` in isolation with no network I/O.
 
 ---
 
@@ -1076,11 +1136,14 @@ Copy `.env.example` to `.env` and fill in your values. The API reads from `.env`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | — | Required for all agent endpoints |
-| `AGENT_MODEL` | `claude-opus-4-6` | Anthropic model ID |
+| `AGENT_PROVIDER` | `anthropic` | LLM provider: `anthropic` or `openai` (any OpenAI-compatible) |
+| `ANTHROPIC_API_KEY` | — | Required when `AGENT_PROVIDER=anthropic` |
+| `OPENAI_API_KEY` | — | Required when `AGENT_PROVIDER=openai` |
+| `AGENT_BASE_URL` | — | Base URL for OpenAI-compatible providers (e.g. `http://localhost:11434/v1`) |
+| `AGENT_MODEL` | `claude-opus-4-6` | Model ID to request from the configured provider |
 | `AGENT_MAX_TOKENS` | `4096` | Max tokens per response turn |
-| `AGENT_ENABLE_THINKING` | `false` | Enable extended thinking globally |
-| `AGENT_THINKING_BUDGET_TOKENS` | `8000` | Token budget for internal reasoning |
+| `AGENT_ENABLE_THINKING` | `false` | Enable extended thinking globally (Anthropic only) |
+| `AGENT_THINKING_BUDGET_TOKENS` | `8000` | Token budget for internal reasoning (Anthropic only) |
 
 ### CloudTrail Polling (opt-in)
 

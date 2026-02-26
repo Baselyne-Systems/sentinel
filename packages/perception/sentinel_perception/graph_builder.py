@@ -183,6 +183,7 @@ class GraphBuilder:
                 logger.error(error)
                 result.errors.append(error)
                 continue
+            assert not isinstance(region_result, BaseException)
             r_nodes, r_edges = region_result
             all_nodes.extend(r_nodes)
             all_edges.extend(r_edges)
@@ -316,6 +317,7 @@ class GraphBuilder:
                 logger.error(error)
                 result.errors.append(error)
                 continue
+            assert not isinstance(connector_result, BaseException)
             c_nodes, c_edges = connector_result
             nodes.extend(c_nodes)
             edges.extend(c_edges)

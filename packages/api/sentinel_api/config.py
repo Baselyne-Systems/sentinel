@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     agent_max_tokens: int = 4096
     agent_enable_thinking: bool = False
     agent_thinking_budget_tokens: int = 8000
+    agent_provider: str = "anthropic"
+    openai_api_key: str = ""
+    agent_base_url: str = ""
 
     # Security
     api_key: str = ""  # If set, all requests must include X-API-Key header

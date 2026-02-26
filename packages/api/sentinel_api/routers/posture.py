@@ -42,18 +42,10 @@ async def get_findings(
     severity: str | None = Query(
         None,
         description="Filter by severity level.",
-        examples={
-            "critical": {"value": "CRITICAL"},
-            "high": {"value": "HIGH"},
-        },
     ),
     resource_type: str | None = Query(
         None,
         description="Filter by resource type (e.g. 'S3Bucket', 'SecurityGroup').",
-        examples={
-            "s3": {"value": "S3Bucket"},
-            "sg": {"value": "SecurityGroup"},
-        },
     ),
     account_id: str | None = Query(None, description="Filter findings to a specific AWS account."),
 ) -> list[dict[str, Any]]:

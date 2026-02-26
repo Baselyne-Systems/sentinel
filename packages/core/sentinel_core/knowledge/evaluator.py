@@ -61,13 +61,13 @@ class PostureEvaluator:
         """
         findings: list[Finding] = []
         tasks = [self._run_rule(rule, account_id) for rule in self._rules]
-        rule_findings = await asyncio.gather(*tasks, return_exceptions=True)
+        raw = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for result in rule_findings:
-            if isinstance(result, Exception):
+        for result in raw:
+            if isinstance(result, BaseException):
                 logger.error("Rule evaluation error: %s", result)
                 continue
-            findings.extend(result)
+            findings.extend(r for r in result if isinstance(r, Finding))
 
         logger.info(
             "Posture evaluation complete: %d findings across %d rules",

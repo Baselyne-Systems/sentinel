@@ -359,6 +359,7 @@ class AgentTools:
             On failure: ``'{"error": "..."}'``.
         """
         try:
+            result: list[dict[str, Any]] | dict[str, Any] | None = None
             if name == "get_resource":
                 result = await self.get_resource(tool_input["node_id"])
                 return json.dumps(result)
@@ -385,6 +386,36 @@ class AgentTools:
         except Exception as e:
             logger.exception("Tool %s failed", name)
             return json.dumps({"error": f"Tool execution failed: {e}"})
+
+
+# ── OpenAI tool schema conversion ─────────────────────────────────────────────
+
+
+def to_openai_tools(schemas: list[dict]) -> list[dict]:
+    """
+    Convert Anthropic-format tool schemas to OpenAI function-calling format.
+
+    Anthropic schema shape: ``{"name", "description", "input_schema"}``
+    OpenAI shape: ``{"type": "function", "function": {"name", "description", "parameters"}}``
+
+    Args:
+        schemas: List of Anthropic-format tool schema dicts.
+
+    Returns:
+        List of OpenAI-format tool dicts ready to pass to
+        ``client.chat.completions.create(tools=...)``.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": s["name"],
+                "description": s["description"],
+                "parameters": s["input_schema"],
+            },
+        }
+        for s in schemas
+    ]
 
 
 # ── Anthropic tool schemas ─────────────────────────────────────────────────────

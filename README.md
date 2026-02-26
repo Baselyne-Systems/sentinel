@@ -10,7 +10,7 @@ SENTINEL builds a live graph of your cloud environment, evaluates every resource
 
 1. **Discovers** every resource in your AWS account (EC2, IAM, S3, RDS, Lambda, VPCs, Security Groups) via boto3 and writes them to a Neo4j graph.
 2. **Evaluates** all resources against ~30 CIS rules. Violations are stamped directly on graph nodes as `posture_flags`.
-3. **Analyzes** any finding using Claude (`claude-opus-4-6`) with 4 read-only graph query tools. Streams reasoning token-by-token via SSE. Results are cached on the graph node. Optionally enables **extended thinking** for deeper multi-step reasoning.
+3. **Analyzes** any finding using a configurable LLM backend (Anthropic by default; drop-in support for any OpenAI-compatible provider) with 4 read-only graph query tools. Streams reasoning token-by-token via SSE. Results are cached on the graph node. Optionally enables **extended thinking** (Anthropic) for deeper multi-step reasoning.
 4. **Remediates** flagged resources with human approval — proposes safe, reversible AWS changes; executes on approval; writes outcomes back to the graph.
 
 ---
@@ -49,7 +49,7 @@ graph TD
 |---------|------|----------------|
 | `sentinel-core` | `packages/core/` | Graph schema (Pydantic nodes/edges), async Neo4j client, CIS rules (~30), posture evaluator, pre-built Cypher queries |
 | `sentinel-perception` | `packages/perception/` | 5 AWS connectors (boto3), `GraphBuilder` orchestrator, CloudTrail change poller |
-| `sentinel-agent` | `packages/agent/` | `SentinelAgent` — Claude tool-use loop, 4 read-only graph tools, SSE events, `AnalysisResult` caching, extended thinking |
+| `sentinel-agent` | `packages/agent/` | `SentinelAgent` — provider-agnostic tool-use loop, `LLMBackend` Protocol, `AnthropicBackend` + `OpenAIBackend`, 4 read-only graph tools, SSE events, `AnalysisResult` caching, extended thinking |
 | `sentinel-remediation` | `packages/remediation/` | `RemediationPlanner` (flags → jobs), `RemediationExecutor` (boto3 dispatch + Neo4j write-back), 8 safe remediators |
 | `sentinel-api` | `packages/api/` | FastAPI app, 6 routers, dependency injection, background tasks, SSE streaming, SQLite persistence |
 
@@ -80,8 +80,14 @@ Edit `.env` at minimum:
 
 ```bash
 AWS_REGIONS=us-east-1          # comma-separated regions to scan
-ANTHROPIC_API_KEY=sk-ant-...   # required for AI analysis (Phase 2)
+ANTHROPIC_API_KEY=sk-ant-...   # required for AI analysis with Anthropic (default)
 # AWS_ASSUME_ROLE_ARN=arn:...  # optional: for cross-account scanning
+
+# To use an OpenAI-compatible provider instead (Groq, Ollama, Together, vLLM):
+# AGENT_PROVIDER=openai
+# OPENAI_API_KEY=sk-...
+# AGENT_BASE_URL=http://localhost:11434/v1   # Ollama example
+# AGENT_MODEL=llama3.2                       # model served by that provider
 ```
 
 ### 2. Start Neo4j
@@ -218,9 +224,11 @@ All endpoints are at `http://localhost:8000/api/v1`. Full OpenAPI spec at `/docs
 
 ---
 
-## Extended Thinking
+## Extended Thinking (Anthropic only)
 
 Extended thinking gives Claude a private scratchpad to reason step-by-step before producing its final answer. For complex security findings — multi-hop attack paths, intricate IAM privilege escalation chains, or findings that require cross-referencing many resources — extended thinking produces materially more thorough analysis than the default mode.
+
+> **Provider note**: Extended thinking is a feature of the Anthropic API (`AGENT_PROVIDER=anthropic`). When using an OpenAI-compatible backend, `?thinking=true` is silently ignored and the `ThinkingDeltaEvent` stream is never emitted.
 
 ### How it works
 
@@ -361,7 +369,7 @@ uv run pytest tests/e2e/ -v -m e2e --timeout=120
 make test-all
 ```
 
-Unit and integration tests use **moto** for AWS mocking (S3, EC2, IAM, RDS, CloudTrail) and `AsyncMock` for Neo4j. E2E tests use **testcontainers** to spin up a real Neo4j 5 Community instance.
+Unit and integration tests use **moto** for AWS mocking (S3, EC2, IAM, RDS, CloudTrail) and `AsyncMock` for Neo4j. Agent tests inject a `MockBackend` directly — no real LLM API calls are made. E2E tests use **testcontainers** to spin up a real Neo4j 5 Community instance.
 
 ---
 
@@ -385,11 +393,14 @@ Unit and integration tests use **moto** for AWS mocking (S3, EC2, IAM, RDS, Clou
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | — | Required for all AI analysis endpoints |
-| `AGENT_MODEL` | `claude-opus-4-6` | Anthropic model ID |
-| `AGENT_MAX_TOKENS` | `4096` | Max tokens per Claude response turn |
-| `AGENT_ENABLE_THINKING` | `false` | Enable extended thinking for all requests by default |
-| `AGENT_THINKING_BUDGET_TOKENS` | `8000` | Token budget for Claude's internal reasoning (extended thinking only) |
+| `AGENT_PROVIDER` | `anthropic` | LLM provider: `anthropic` (default) or `openai` (any OpenAI-compatible) |
+| `ANTHROPIC_API_KEY` | — | Required when `AGENT_PROVIDER=anthropic` |
+| `OPENAI_API_KEY` | — | Required when `AGENT_PROVIDER=openai` |
+| `AGENT_BASE_URL` | — | Base URL override for OpenAI-compatible providers (e.g. `http://localhost:11434/v1` for Ollama) |
+| `AGENT_MODEL` | `claude-opus-4-6` | Model ID to request from the configured provider |
+| `AGENT_MAX_TOKENS` | `4096` | Max tokens per response turn |
+| `AGENT_ENABLE_THINKING` | `false` | Enable extended thinking for all requests by default (Anthropic only) |
+| `AGENT_THINKING_BUDGET_TOKENS` | `8000` | Token budget for internal reasoning when extended thinking is active (Anthropic only) |
 
 ### Security
 
@@ -415,7 +426,9 @@ sentinel/
 ├── packages/
 │   ├── core/            sentinel-core        (schema, Neo4j, CIS rules)
 │   ├── perception/      sentinel-perception  (AWS discovery, GraphBuilder)
-│   ├── agent/           sentinel-agent       (Claude tool-use, SSE streaming, extended thinking)
+│   ├── agent/           sentinel-agent       (provider-agnostic tool-use loop)
+│   │   └── sentinel_agent/
+│   │       └── backends/  (LLMBackend Protocol, AnthropicBackend, OpenAIBackend)
 │   ├── remediation/     sentinel-remediation (planner, executor, remediators)
 │   └── api/             sentinel-api         (FastAPI, routers, deps, SQLite store)
 ├── frontend/
