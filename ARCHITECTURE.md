@@ -7,17 +7,18 @@ This document describes the full system architecture: every package, every compo
 ## Table of Contents
 
 1. [System Overview](#1-system-overview)
-2. [Package Map and Dependencies](#2-package-map-and-dependencies)
-3. [sentinel-core — Data contracts and graph primitives](#3-sentinel-core)
-4. [sentinel-perception — AWS discovery](#4-sentinel-perception)
-5. [sentinel-agent — LLM reasoning layer](#5-sentinel-agent)
-6. [sentinel-remediation — Autonomous remediation](#6-sentinel-remediation)
-7. [sentinel-api — HTTP layer](#7-sentinel-api)
-8. [Frontend](#8-frontend)
-9. [Data Flows](#9-data-flows)
-10. [Infrastructure](#10-infrastructure)
-11. [Tests](#11-tests)
-12. [Configuration Reference](#12-configuration-reference)
+2. [Key Concepts](#2-key-concepts)
+3. [Package Map and Dependencies](#3-package-map-and-dependencies)
+4. [sentinel-core — Data contracts and graph primitives](#4-sentinel-core)
+5. [sentinel-perception — AWS discovery](#5-sentinel-perception)
+6. [sentinel-agent — LLM reasoning layer](#6-sentinel-agent)
+7. [sentinel-remediation — Autonomous remediation](#7-sentinel-remediation)
+8. [sentinel-api — HTTP layer](#8-sentinel-api)
+9. [Frontend](#9-frontend)
+10. [Data Flows](#10-data-flows)
+11. [Infrastructure](#11-infrastructure)
+12. [Tests](#12-tests)
+13. [Configuration Reference](#13-configuration-reference)
 
 ---
 
@@ -88,7 +89,25 @@ Next.js Frontend
 
 ---
 
-## 2. Package Map and Dependencies
+## 2. Key Concepts
+
+Brief definitions for terms used throughout this document.
+
+**CIS AWS Foundations Benchmark**: a set of security configuration guidelines published by the Center for Internet Security (CIS). The v1.5 benchmark covers ~100 rules across IAM, storage, networking, and monitoring. SENTINEL implements a subset of ~24 rules as executable checks. Each rule maps to a posture flag. When people say "a CIS violation" they mean a resource that fails one of these checks.
+
+**Cypher**: the query language for Neo4j, analogous to SQL for relational databases. Queries use `MATCH` to traverse nodes and edges, `WHERE` to filter, and `RETURN` to project results. Example: `MATCH (b:S3Bucket {is_public: true}) RETURN b`. SENTINEL uses Cypher for both reads (the agent's graph tools) and writes (upserting nodes, stamping flags).
+
+**Attack path**: a sequence of connected resources that an adversary could exploit to reach a sensitive target. In SENTINEL, attack paths are multi-hop graph traversals — for example: open security group → EC2 instance → IAM role → S3 bucket with sensitive data. A single misconfiguration may not be critical in isolation; its position in an attack path often determines the real risk level.
+
+**Tool-use loop**: the interaction pattern where an LLM is given a set of callable tools and allowed to invoke them multiple times before producing a final response. The agent calls a tool, receives the result, reasons about it, then decides whether to call another tool or stop. SENTINEL gives Claude four read-only graph tools and runs up to 8 rounds before forcing a conclusion. This is distinct from a single-shot prompt: the model actively navigates the graph rather than reasoning from a static context.
+
+**Cross-account access / assume role**: AWS IAM allows one account to delegate access to another by assuming an IAM Role. The caller requests temporary credentials from STS (Security Token Service) by providing a role ARN; the credentials expire after a configured duration. SENTINEL uses this to scan multiple AWS accounts from a single deployment — each connector accepts an `assume_role_arn` and will call `STS.assume_role()` before making API calls.
+
+**Star policy / wildcard IAM**: an IAM policy that grants all actions (`"Action": "*"`) on all resources (`"Resource": "*"`) — effectively giving the principal administrative access to every AWS service. CIS rule 1.16 flags any policy document containing this pattern. It is one of the highest-risk IAM misconfigurations because a compromised identity with a star policy can read, modify, or delete anything in the account.
+
+---
+
+## 3. Package Map and Dependencies
 
 The repo is a **uv workspace** (`pyproject.toml` at root). Five Python packages:
 
