@@ -441,6 +441,78 @@ Tool-use loop (max 8 rounds):
 
 `generate_brief(account_id, top_n)` follows the same pattern with a different initial message (top-N findings context instead of a single node).
 
+### 5.5 Extended Thinking
+
+Extended thinking gives Claude a private token budget to reason step-by-step before writing its response. It is implemented using the `interleaved-thinking-2025-05-14` Anthropic beta and is opt-in at both the instance and request level.
+
+**Activation**
+
+```python
+# Per-agent-instance default (set in AgentSettings from env):
+settings = AgentSettings(
+    anthropic_api_key="...",
+    enable_thinking=True,            # AGENT_ENABLE_THINKING=true
+    thinking_budget_tokens=10000,    # AGENT_THINKING_BUDGET_TOKENS=10000
+)
+
+# Per-request override (router passes enable_thinking to the method):
+async for event in agent.analyze_finding(node_id, account_id, enable_thinking=True):
+    ...
+```
+
+HTTP API: `POST /agent/findings/{node_id}/analyze?thinking=true`
+
+**API call construction**
+
+When `enable_thinking=True`, `_run_tool_loop` adds two extra parameters to every Anthropic API call:
+
+```python
+api_kwargs["thinking"] = {
+    "type": "enabled",
+    "budget_tokens": self._thinking_budget_tokens,   # e.g. 8000
+}
+api_kwargs["betas"] = ["interleaved-thinking-2025-05-14"]
+# max_tokens is raised to max(agent_max_tokens, budget_tokens + 2048) automatically
+```
+
+**Thinking blocks and multi-turn correctness**
+
+The Anthropic API returns thinking content as `thinking` blocks alongside `text` and `tool_use` blocks. Each thinking block carries a cryptographic `signature`. The signature **must** be preserved verbatim in the message history for subsequent turns — the API validates it. The agent stores it explicitly:
+
+```python
+if block.type == "thinking":
+    assistant_content.append({
+        "type": "thinking",
+        "thinking": block.thinking,
+        "signature": block.signature,   # required — do not omit
+    })
+```
+
+**SSE streaming**
+
+When extended thinking is active, `_run_tool_loop` yields an additional event type:
+
+```
+data: {"event": "thinking_delta", "thinking": "Let me check the VPC..."}\n\n
+```
+
+`ThinkingDeltaEvent` is emitted for each `thinking_delta` content block delta, interleaved with `TextDeltaEvent` tokens as Claude reasons and then writes. The frontend `AnalysisPanel` renders thinking deltas in a collapsible "Claude's reasoning" panel.
+
+**Caching**
+
+The `AnalysisResult` cached on the Neo4j node (`n.agent_analysis`) is identical whether thinking was used or not — it contains the final structured output, not the reasoning. Thinking tokens are ephemeral and never persisted.
+
+**Token budget guidance**
+
+| Environment | Recommended budget |
+|-------------|-------------------|
+| Simple findings (single flag) | 4 000–6 000 |
+| Multi-flag findings | 6 000–8 000 (default) |
+| Complex IAM / attack path analysis | 8 000–12 000 |
+| Executive briefs (top-10 findings) | 10 000–16 000 |
+
+`AGENT_MAX_TOKENS` is automatically raised to `budget + 2048` when thinking is enabled, so the agent never hits the token cap mid-response.
+
 ---
 
 ## 6. sentinel-remediation
@@ -550,45 +622,100 @@ def execute(params: dict, session: boto3.Session) -> dict:
 
 ### 7.1 `config.py` — `Settings`
 
-`pydantic-settings` class loaded from environment / `.env` file:
+`pydantic-settings` class loaded from environment / `.env` file. All settings are available via `get_settings()` which is `@lru_cache` — one instance per process.
+
+Key settings grouped by concern:
 
 ```
+# Neo4j
 neo4j_uri, neo4j_user, neo4j_password
-aws_default_region, aws_regions (CSV), aws_assume_role_arn
-api_port, enable_raw_cypher
-anthropic_api_key, agent_model, agent_max_tokens
-```
 
-`get_settings()` is `@lru_cache` — one instance per process.
+# AWS
+aws_default_region, aws_regions (CSV → regions_list property), aws_assume_role_arn
+
+# API
+api_port, enable_raw_cypher
+
+# Security
+api_key              # empty = disabled; set to enforce X-API-Key header
+rate_limit_enabled   # false (dev default) / true (production)
+
+# AI Agent
+anthropic_api_key, agent_model, agent_max_tokens
+agent_enable_thinking        # default global thinking mode
+agent_thinking_budget_tokens # token budget when thinking is active
+
+# Persistence
+sentinel_db_path     # path to SQLite file (default: ./sentinel.db)
+
+# CloudTrail polling
+enable_cloudtrail_polling, aws_account_id, cloudtrail_poll_interval
+```
 
 ### 7.2 `deps.py` — Dependency injection
 
-Module-level singleton: `_neo4j_client: Neo4jClient | None = None`
-
-Set at startup via `set_neo4j_client(client)`. FastAPI dependencies (used in route signatures via `Annotated[..., Depends(...)]`):
+Two module-level singletons — one for Neo4j, one for the SQLite store — initialised at startup and injectable via FastAPI `Depends`:
 
 ```python
-Neo4jDep      = Annotated[Neo4jClient,      Depends(get_neo4j_client)]
-QueriesDep    = Annotated[GraphQueries,     Depends(get_graph_queries)]
-EvaluatorDep  = Annotated[PostureEvaluator, Depends(get_posture_evaluator)]
-AgentDep      = Annotated[SentinelAgent,    Depends(get_sentinel_agent)]
-SettingsDep   = Annotated[Settings,         Depends(get_settings)]
+# Neo4j
+_neo4j_client: Neo4jClient | None = None
+get_neo4j_client() / set_neo4j_client(client)
+Neo4jDep = Annotated[Neo4jClient, Depends(get_neo4j_client)]
+
+# SQLite store
+_store: SentinelStore | None = None
+get_store() / set_store(store)
+StoreDep = Annotated[SentinelStore, Depends(get_store)]
+
+# Derived deps
+QueriesDep   = Annotated[GraphQueries,     Depends(get_graph_queries)]
+EvaluatorDep = Annotated[PostureEvaluator, Depends(get_posture_evaluator)]
+AgentDep     = Annotated[SentinelAgent,    Depends(get_sentinel_agent)]
+SettingsDep  = Annotated[Settings,         Depends(get_settings)]
 ```
+
+Both `get_store()` and `get_neo4j_client()` raise `RuntimeError` when called before startup — the lifespan checks for this to detect pre-injected test fixtures (E2E tests inject a `:memory:` store to avoid creating `./sentinel.db`).
 
 ### 7.3 `main.py` — App lifecycle
 
 ```python
 @asynccontextmanager
 async def lifespan(app):
+    # Fast path when both are pre-injected (E2E test mode)
+    if neo4j_pre_injected and store_pre_injected:
+        yield; return
+
+    # Normal startup
     client = Neo4jClient(uri, user, password)
     await client.connect()
-    await client.ensure_indexes()  # creates indexes once at startup
-    set_neo4j_client(client)       # registers singleton for deps
-    yield
+    await client.ensure_indexes()
+    set_neo4j_client(client)
+
+    store = SentinelStore(db_path=settings.sentinel_db_path)
+    await store.initialize()   # CREATE TABLE IF NOT EXISTS + WAL mode
+    set_store(store)
+
+    yield  # app runs
+
+    # Teardown
     await client.close()
+    await store.close()
+    set_store(None)
 ```
 
-CORS allows `http://localhost:3000` (Next.js dev server).
+**Middleware stack** (registered in `create_app()`):
+
+```python
+app.state.limiter = limiter                             # slowapi rate limiter
+app.add_exception_handler(RateLimitExceeded, handler)  # 429 responses
+app.add_middleware(SecurityHeadersMiddleware)           # defensive HTTP headers
+app.add_middleware(ApiKeyMiddleware)                    # X-API-Key enforcement
+app.add_middleware(CORSMiddleware, ...)                 # allow localhost:3000
+```
+
+`SecurityHeadersMiddleware` adds: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`.
+
+`ApiKeyMiddleware` is a transparent passthrough when `API_KEY` is empty (default). When set, it enforces `X-API-Key` on all paths except `/health`, `/docs`, `/redoc`, `/openapi.json`.
 
 All routers mounted at `/api/v1`:
 - `graph.router` → `/api/v1/graph/...`
@@ -603,7 +730,7 @@ All routers mounted at `/api/v1`:
 **`routers/scan.py`**
 
 ```
-POST /scan/trigger
+POST /scan/trigger                                             rate: 10/min
     body: { account_id?, regions?, assume_role_arn?, clear_first? }
     → { job_id, status: "queued", account_id }
 
@@ -614,7 +741,7 @@ GET  /scan/
     → list[ScanJobResponse]  (newest first)
 ```
 
-In-memory job store `_jobs: dict[str, dict]`. `BackgroundTasks.add_task(_run_scan, ...)` calls `GraphBuilder.full_scan()`.
+Job state persisted in SQLite (`scan_jobs` table) via `StoreDep`. `BackgroundTasks.add_task(_run_scan, ..., store=store)` calls `GraphBuilder.full_scan()`, then writes `status=completed/failed` back via `store.update_scan_job()`.
 
 **`routers/graph.py`**
 
@@ -637,9 +764,17 @@ GET  /posture/cis-rules
 **`routers/agent.py`**
 
 ```
-POST /agent/findings/{node_id}/analyze   → StreamingResponse (text/event-stream)
-GET  /agent/findings/{node_id}/analysis  → AnalysisResult (cached) | 404
-POST /agent/brief?account_id=...&top_n=5 → StreamingResponse (text/event-stream)
+POST /agent/findings/{node_id}/analyze?thinking=false   rate: 20/min
+    → StreamingResponse (text/event-stream)
+    Events: text_delta | thinking_delta | tool_use | analysis_complete | error
+    ?thinking=true enables extended thinking (see section 5.5)
+
+GET  /agent/findings/{node_id}/analysis
+    → AnalysisResult (cached on Neo4j node) | 404
+
+POST /agent/brief?account_id=...&top_n=5&thinking=false
+    → StreamingResponse (text/event-stream)
+    Not cached — each call triggers a fresh agent run.
 ```
 
 SSE headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` (disables nginx proxy buffering).
@@ -647,14 +782,16 @@ SSE headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Ac
 **`routers/remediation.py`**
 
 ```
-POST /remediation/propose            body: { node_id }  → list[RemediationJob]
-GET  /remediation/                                      → list[RemediationJob]
-GET  /remediation/{job_id}                              → RemediationJob
-POST /remediation/{job_id}/approve                      → RemediationJob (queues execution)
-POST /remediation/{job_id}/reject                       → RemediationJob
+POST /remediation/propose            rate: 30/min
+    body: { node_id }  → list[RemediationJob] (all PENDING)
+
+GET  /remediation/       → list[RemediationJob] (newest first)
+GET  /remediation/{id}   → RemediationJob
+POST /remediation/{id}/approve  → RemediationJob (queues background execution)
+POST /remediation/{id}/reject   → RemediationJob
 ```
 
-In-memory job store `_jobs: dict[str, RemediationJob]`. Approve triggers `BackgroundTasks.add_task(_execute_job, ...)`.
+Job state persisted in SQLite (`remediation_jobs` table) via `StoreDep`. Approve triggers `BackgroundTasks.add_task(_execute_job, ..., store=store)` which calls `RemediationExecutor.execute()` then writes the updated job back.
 
 ---
 
@@ -666,10 +803,11 @@ In-memory job store `_jobs: dict[str, RemediationJob]`. Approve triggers `Backgr
 
 | Page | Route | What it does |
 |------|-------|-------------|
-| Dashboard | `/` | Posture summary cards (CRITICAL/HIGH counts), scan trigger button, last scan status (polls every 2s while running) |
+| Dashboard | `/` | Posture summary cards (CRITICAL/HIGH counts), scan trigger button with animated progress indicator, "Scan history" link |
 | Graph Explorer | `/graph` | Full Cytoscape.js visualization of all nodes/edges, filter by type/severity, click node to see detail |
 | Findings | `/findings` | Table of all flagged nodes, filter by severity and resource type, click row to drill down |
 | Finding Detail | `/findings/[id]` | All node properties, posture flags, "Propose Remediation" button, agent `AnalysisPanel` |
+| Scans | `/scans` | Full scan history table (status, started, account, regions, nodes, edges, findings, duration); auto-polls when jobs active; trigger button |
 | Remediations | `/remediations` | All remediation jobs with status tabs, approve/reject with confirmation modal, polls every 3s while executing |
 
 ### 8.2 Key Components
@@ -900,18 +1038,53 @@ Async tests use `pytest-asyncio` with `asyncio_mode = "auto"` in `pyproject.toml
 
 ## 12. Configuration Reference
 
+Copy `.env.example` to `.env` and fill in your values. The API reads from `.env` automatically via `pydantic-settings`.
+
+### Neo4j
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j Bolt URI |
 | `NEO4J_USER` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | `sentinel_dev` | Neo4j password |
+| `NEO4J_PASSWORD` | `sentinel_dev` | Password (required in production) |
+
+### AWS
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `AWS_DEFAULT_REGION` | `us-east-1` | Default boto3 region |
 | `AWS_REGIONS` | `us-east-1` | Comma-separated regions to scan |
-| `AWS_ASSUME_ROLE_ARN` | `` | IAM Role to assume for cross-account |
+| `AWS_ASSUME_ROLE_ARN` | — | IAM Role to assume for cross-account |
+| `AWS_ACCOUNT_ID` | — | Required when `ENABLE_CLOUDTRAIL_POLLING=true` |
+
+### API
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `API_PORT` | `8000` | FastAPI listen port |
 | `ENABLE_RAW_CYPHER` | `false` | Enable `POST /graph/query` (dev only) |
-| `ANTHROPIC_API_KEY` | `` | Required for agent analysis |
-| `AGENT_MODEL` | `claude-opus-4-6` | Anthropic model for analysis |
-| `AGENT_MAX_TOKENS` | `4096` | Max tokens per agent response |
+| `SENTINEL_DB_PATH` | `./sentinel.db` | SQLite file for job persistence |
 
-Copy `.env.example` to `.env` and fill in your values. The API reads from `.env` automatically via `pydantic-settings`.
+### Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_KEY` | — | When set, enforce `X-API-Key` header on all requests |
+| `RATE_LIMIT_ENABLED` | `false` | Enable per-IP rate limits in production |
+
+### AI Agent (Phase 2)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | — | Required for all agent endpoints |
+| `AGENT_MODEL` | `claude-opus-4-6` | Anthropic model ID |
+| `AGENT_MAX_TOKENS` | `4096` | Max tokens per response turn |
+| `AGENT_ENABLE_THINKING` | `false` | Enable extended thinking globally |
+| `AGENT_THINKING_BUDGET_TOKENS` | `8000` | Token budget for internal reasoning |
+
+### CloudTrail Polling (opt-in)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_CLOUDTRAIL_POLLING` | `false` | Start background CloudTrail poller |
+| `CLOUDTRAIL_POLL_INTERVAL` | `60` | Poll interval in seconds |
