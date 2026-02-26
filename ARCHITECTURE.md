@@ -229,15 +229,46 @@ class CISRule:
     tags: list[str]
 ```
 
-~30 rules covering:
-- IAM: no MFA, star policies, root usage, stale credentials, weak password policy
-- S3: public access, no versioning, no encryption, no logging, no policy
-- Security Groups: open SSH/RDP/all-ingress
-- RDS: public, unencrypted, no multi-AZ
-- CloudTrail: not enabled, no log validation
-- EC2: EBS unencrypted
-- Lambda: public URL, no VPC
-- VPC: cross-account peering
+Rules are loaded at process startup and never persisted to the database. The full catalogue is in `ALL_RULES: list[CISRule]` and indexed by `RULES_BY_ID: dict[str, CISRule]` for O(1) lookup.
+
+#### Coverage (24 rules across CIS AWS Foundations Benchmark v1.5)
+
+| Section | Rules | Flags |
+|---------|-------|-------|
+| 1 — IAM | 1.1, 1.2, 1.3, 1.4, 1.5, 1.10, 1.16 | `IAM_ROOT_USAGE`, `IAM_NO_MFA`, `IAM_STALE_CREDENTIALS`, `IAM_STALE_ACCESS_KEYS`, `IAM_WEAK_PASSWORD_POLICY`, `IAM_STAR_POLICY` |
+| 2 — Storage | 2.1.1, 2.1.2, 2.1.5, 2.1.6, 2.2.1, 2.3.1, 2.3.2, 2.3.3 | `S3_NO_POLICY`, `S3_NO_VERSIONING`, `S3_PUBLIC_ACCESS`, `S3_NO_LOGGING`, `EBS_UNENCRYPTED`, `RDS_NO_ENCRYPTION`, `RDS_PUBLIC`, `RDS_NO_MULTI_AZ` |
+| 3 — Networking | 3.1, 3.2, 3.3, 3.4 | `SG_OPEN_SSH`, `SG_OPEN_RDP`, `SG_OPEN_ALL_INGRESS`, `VPC_CROSS_ACCOUNT_PEERING` |
+| 4 — Monitoring | 4.1, 4.2, 4.3 | `NO_CLOUDTRAIL`, `NO_CLOUDTRAIL_VALIDATION` |
+| 5 — Compute | 5.1, 5.2 | `LAMBDA_PUBLIC_URL`, `LAMBDA_NO_VPC` |
+
+#### Two-phase detection
+
+Rules come in two distinct kinds that are easy to confuse:
+
+**Connector-precomputed flags**: some violations require inspecting raw API response data that cannot be expressed as a simple property comparison in Cypher. The connector stamps the flag at discovery time; the Cypher check just reads it back.
+
+Example — `SG_OPEN_SSH`: the EC2 connector inspects each inbound rule dict `{"from_port": 22, "cidr": "0.0.0.0/0"}` and stamps the flag on the `SecurityGroup` node. The CIS-3.1 Cypher check then simply does `WHERE 'SG_OPEN_SSH' IN sg.posture_flags`. This keeps the Cypher layer thin and readable, but it means **connectors and rules are coupled**: if you add a new network-level rule you must also update the connector, not just `rules.py`.
+
+**Pure-Cypher rules**: property comparisons and graph topology checks that need no connector help.
+
+Examples:
+- `MATCH (b:S3Bucket {is_public: true})` — a boolean already on the node
+- `MATCH (f:LambdaFunction) WHERE NOT (f)-[:IN_VPC]->(:VPC)` — graph traversal, no pre-stamp needed
+- `MATCH (v1:VPC)-[:PEER_OF]->(v2:VPC) WHERE v1.account_id <> v2.account_id` — cross-node edge query
+
+All Cypher checks must return at minimum a `node_id` column — the evaluator does not impose further schema.
+
+#### Severity semantics
+
+Severity is **denormalized onto nodes**: the evaluator stamps both the specific flag (`SG_OPEN_SSH`) and the severity string (`CRITICAL`) into the same `posture_flags` list. This means a single query like `MATCH (n) WHERE 'CRITICAL' IN n.posture_flags` finds all critical violations without joining to the rule catalogue. The trade-off is that the severity is baked in at evaluation time and stale after a benchmark update until the next scan.
+
+#### Gaps and limitations in the current ruleset
+
+- **No KMS rules** — CIS 3.5–3.9 (CMK rotation, KMS key policies) require a `KMSKey` node type not yet modelled
+- **No Config/GuardDuty rules** — CIS 4.4–4.15 check for metric filters and CloudWatch alarms; these require log data outside the graph
+- **No VPC Flow Logs rule** — VPC flow log status is not yet captured during discovery
+- **Stale credential check is approximate** — CIS-1.3 uses `password_last_used` from the IAM connector, which is only available for console users, not programmatic access
+- **Access key rotation (CIS-1.4) is incomplete** — the check flags any user with `access_key_count > 0`; it does not actually inspect key creation dates (not yet modelled)
 
 ### 3.7 `knowledge/evaluator.py` — `PostureEvaluator`
 
@@ -252,6 +283,28 @@ For each CIS rule:
 3. Returns `list[Finding]` for the scan result summary
 
 All rules run in parallel via `asyncio.gather()`. Flags are **additive** — a node accumulates all its violations across multiple rule evaluations.
+
+#### Future directions for the rules engine
+
+**Cross-resource attack path rules**: all 24 current rules are single-node property checks. Graph databases shine at multi-hop queries. A natural next step is rules that traverse edges to express compound risk — for example: *"an EC2 instance attached to an open-ingress security group that also executes as an IAM role with a star policy"*. These would return the pair `(instance_node_id, policy_node_id)` and need a new `Finding` shape to capture the full path.
+
+```cypher
+MATCH (i:EC2Instance)-[:MEMBER_OF_SG]->(sg:SecurityGroup),
+      (i)-[:EXECUTES_AS]->(role:IAMRole)-[:HAS_ATTACHED_POLICY]->(p:IAMPolicy)
+WHERE 'SG_OPEN_ALL_INGRESS' IN sg.posture_flags
+  AND 'IAM_STAR_POLICY' IN p.posture_flags
+RETURN i.node_id AS node_id
+```
+
+**Context-sensitive severity**: today severity is static per rule. In practice, a public RDS instance in a VPC with no other exposure is less urgent than one directly reachable via an open security group and a public subnet. Severity could be computed dynamically at evaluation time by walking the graph for additional risk amplifiers.
+
+**Additional benchmarks**: the `CISRule` dataclass is benchmark-agnostic — the `id` field is just a string. SOC 2 CC6/CC7, NIST 800-53 AC/AU/IA, and PCI DSS 3.2 requirements could be expressed as additional rule sets loaded alongside `ALL_RULES`. The key design question is flag namespace isolation: `SOC2_CC6_3_PUBLIC_ACCESS` vs. reusing `S3_PUBLIC_ACCESS`.
+
+**Temporal rules via CloudTrail**: some violations only matter in combination with recent activity. The CloudTrail poller already watches for changes; a rule that says *"this access key has not been rotated in 90 days AND has made S3 Put calls in the last 30 days"* would require joining graph node state with CloudTrail event history, likely via a time-series property on nodes updated by the poller.
+
+**Suppression / exceptions**: production environments need to mark known-acceptable violations (e.g., an intentionally public S3 bucket used for static website hosting). A `suppressed_flags: list[str]` property on nodes — settable via the API — would let the evaluator skip flagging them. The agent and posture summary would need to respect suppressions.
+
+**Remediation link from rule to planner**: `remediation_hint` is currently free text. Structurally linking it to the `_FLAG_MAP` entries in `sentinel_remediation/planner.py` would make rules self-documenting about automated remediation availability, and would let the API surface "remediable: true/false" per finding without the planner being queried separately.
 
 ---
 
