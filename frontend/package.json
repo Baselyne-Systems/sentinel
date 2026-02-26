@@ -15,7 +15,6 @@
     "react-dom": "^18.3.1",
     "cytoscape": "^3.30.2",
     "cytoscape-cola": "^2.5.1",
-    "cola": "^3.4.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.400.0"
   },
