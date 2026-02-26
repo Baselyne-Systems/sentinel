@@ -1,6 +1,6 @@
 # SENTINEL — Architecture Reference
 
-This document describes the full system architecture: every package, every key file, every data flow, and every design decision. Read this before touching the codebase.
+This document describes the full system architecture: every package, every component, every data flow, and every design decision. Read this before touching the codebase.
 
 ---
 
@@ -72,7 +72,7 @@ Next.js Frontend
 
 ## 2. Package Map and Dependencies
 
-The repo is a **uv workspace** (`pyproject.toml` at root). Five Python packages live under `packages/`:
+The repo is a **uv workspace** (`pyproject.toml` at root). Five Python packages:
 
 ```
 sentinel-api             ← imports everything below
@@ -84,13 +84,13 @@ sentinel-api             ← imports everything below
 
 Each package has its own `pyproject.toml` with `[tool.uv.sources]` workspace references.
 
-| Package | Path | Key external deps |
-|---------|------|-------------------|
-| `sentinel-core` | `packages/core/` | `neo4j` (async driver), `pydantic v2` |
-| `sentinel-perception` | `packages/perception/` | `boto3` |
-| `sentinel-agent` | `packages/agent/` | `anthropic`, `openai` |
-| `sentinel-remediation` | `packages/remediation/` | `boto3` |
-| `sentinel-api` | `packages/api/` | `fastapi`, `uvicorn`, `pydantic-settings` |
+| Package | Key external deps |
+|---------|-------------------|
+| `sentinel-core` | `neo4j` (async driver), `pydantic v2` |
+| `sentinel-perception` | `boto3` |
+| `sentinel-agent` | `anthropic`, `openai` |
+| `sentinel-remediation` | `boto3` |
+| `sentinel-api` | `fastapi`, `uvicorn`, `pydantic-settings` |
 
 ---
 
@@ -98,7 +98,7 @@ Each package has its own `pyproject.toml` with `[tool.uv.sources]` workspace ref
 
 **Purpose**: defines what every node and edge looks like, owns the Neo4j connection, runs CIS evaluations, and provides pre-built Cypher queries. Nothing outside this package should ever form raw Cypher by hand (except the agent tools and posture evaluator, which by nature generate queries dynamically).
 
-### 3.1 `models/enums.py`
+### 3.1 Enums
 
 All enums extend `StrEnum` — they serialize to plain strings with no `.value` call needed.
 
@@ -112,7 +112,7 @@ All enums extend `StrEnum` — they serialize to plain strings with no `.value` 
 
 Posture flags are stored as a **string list** on every graph node (`n.posture_flags = ["CRITICAL", "SG_OPEN_SSH"]`). A node with a specific flag also always carries a severity label.
 
-### 3.2 `models/nodes.py`
+### 3.2 Node models
 
 All node models are Pydantic `BaseModel` subclasses extending `GraphNode`:
 
@@ -154,7 +154,7 @@ Resource-specific models add their own typed fields:
 - `IAMUser`: `user_id`, `name`, `has_mfa`, `access_key_count`, `password_last_used`
 - `LambdaFunction`: `function_name`, `arn`, `runtime`, `role_arn`, `vpc_config`
 
-### 3.3 `models/edges.py`
+### 3.3 Edge models
 
 Edge models extend `GraphEdge`:
 
@@ -178,7 +178,7 @@ Concrete edge types:
 - `ExecutesAs`: LambdaFunction → IAMRole
 - `PeerOf`: VPC ↔ VPC (bidirectional peering)
 
-### 3.4 `graph/client.py` — `Neo4jClient`
+### 3.4 Neo4jClient
 
 Async wrapper around `neo4j.AsyncGraphDatabase`. One instance exists per API process, initialized at startup and injected everywhere via FastAPI deps.
 
@@ -196,7 +196,7 @@ Async wrapper around `neo4j.AsyncGraphDatabase`. One instance exists per API pro
 
 Design: MERGE on `node_id` means every write is **idempotent** — re-scanning the same account updates existing nodes, never duplicates them.
 
-### 3.5 `graph/queries.py` — `GraphQueries`
+### 3.5 GraphQueries
 
 Pre-built Cypher queries for security analysis patterns:
 
@@ -212,7 +212,7 @@ await queries.find_unencrypted_rds()          # MATCH (r:RDSInstance {encrypted:
 
 These are also the backbone of the agent's `find_attack_paths` tool.
 
-### 3.6 `knowledge/rules.py` — CIS rules
+### 3.6 CIS rules
 
 Each rule is a Python dataclass (not a DB record):
 
@@ -247,7 +247,7 @@ Rules come in two distinct kinds that are easy to confuse:
 
 **Connector-precomputed flags**: some violations require inspecting raw API response data that cannot be expressed as a simple property comparison in Cypher. The connector stamps the flag at discovery time; the Cypher check just reads it back.
 
-Example — `SG_OPEN_SSH`: the EC2 connector inspects each inbound rule dict `{"from_port": 22, "cidr": "0.0.0.0/0"}` and stamps the flag on the `SecurityGroup` node. The CIS-3.1 Cypher check then simply does `WHERE 'SG_OPEN_SSH' IN sg.posture_flags`. This keeps the Cypher layer thin and readable, but it means **connectors and rules are coupled**: if you add a new network-level rule you must also update the connector, not just `rules.py`.
+Example — `SG_OPEN_SSH`: the EC2 connector inspects each inbound rule dict `{"from_port": 22, "cidr": "0.0.0.0/0"}` and stamps the flag on the `SecurityGroup` node. The CIS-3.1 Cypher check then simply does `WHERE 'SG_OPEN_SSH' IN sg.posture_flags`. This keeps the Cypher layer thin and readable, but it means **connectors and rules are coupled**: if you add a new network-level rule you must also update the connector, not just the rule catalogue.
 
 **Pure-Cypher rules**: property comparisons and graph topology checks that need no connector help.
 
@@ -270,7 +270,7 @@ Severity is **denormalized onto nodes**: the evaluator stamps both the specific 
 - **Stale credential check is approximate** — CIS-1.3 uses `password_last_used` from the IAM connector, which is only available for console users, not programmatic access
 - **Access key rotation (CIS-1.4) is incomplete** — the check flags any user with `access_key_count > 0`; it does not actually inspect key creation dates (not yet modelled)
 
-### 3.7 `knowledge/evaluator.py` — `PostureEvaluator`
+### 3.7 PostureEvaluator
 
 ```python
 evaluator = PostureEvaluator(client)
@@ -304,7 +304,7 @@ RETURN i.node_id AS node_id
 
 **Suppression / exceptions**: production environments need to mark known-acceptable violations (e.g., an intentionally public S3 bucket used for static website hosting). A `suppressed_flags: list[str]` property on nodes — settable via the API — would let the evaluator skip flagging them. The agent and posture summary would need to respect suppressions.
 
-**Remediation link from rule to planner**: `remediation_hint` is currently free text. Structurally linking it to the `_FLAG_MAP` entries in `sentinel_remediation/planner.py` would make rules self-documenting about automated remediation availability, and would let the API surface "remediable: true/false" per finding without the planner being queried separately.
+**Remediation link from rule to planner**: `remediation_hint` is currently free text. Structurally linking it to the planner's `_FLAG_MAP` would make rules self-documenting about automated remediation availability, and would let the API surface "remediable: true/false" per finding without the planner being queried separately.
 
 ---
 
@@ -312,7 +312,7 @@ RETURN i.node_id AS node_id
 
 **Purpose**: discovers all AWS resources via boto3 and feeds them to the graph.
 
-### 4.1 `connectors/aws/base.py` — Shared utilities
+### 4.1 Shared connector utilities
 
 ```python
 get_session(region, assume_role_arn) → boto3.Session
@@ -345,17 +345,17 @@ async def discover(
     ...
 ```
 
-**IAM** (`connectors/aws/iam.py`): global (no region loop). Discovers roles, users, managed policies. Decodes URL-encoded trust policies (JSON). Builds `CAN_ASSUME` edges (role → role via trust), `HAS_ATTACHED_POLICY` edges (role/user → policy). Detects star actions in policy documents.
+**IAM connector**: global (no region loop). Discovers roles, users, managed policies. Decodes URL-encoded trust policies (JSON). Builds `CAN_ASSUME` edges (role → role via trust), `HAS_ATTACHED_POLICY` edges (role/user → policy). Detects star actions in policy documents.
 
-**EC2** (`connectors/aws/ec2.py`): per region. Discovers VPCs, Subnets, Security Groups, EC2 Instances. Checks SG inbound rules for `0.0.0.0/0` and `::/0` on ports 22 (SSH), 3389 (RDP), and all ports. Stamps `SG_OPEN_SSH`, `SG_OPEN_RDP`, `SG_OPEN_ALL_INGRESS`. Builds `IN_VPC`, `IN_SUBNET`, `MEMBER_OF_SG` edges.
+**EC2 connector**: per region. Discovers VPCs, Subnets, Security Groups, EC2 Instances. Checks SG inbound rules for `0.0.0.0/0` and `::/0` on ports 22 (SSH), 3389 (RDP), and all ports. Stamps `SG_OPEN_SSH`, `SG_OPEN_RDP`, `SG_OPEN_ALL_INGRESS`. Builds `IN_VPC`, `IN_SUBNET`, `MEMBER_OF_SG` edges.
 
-**S3** (`connectors/aws/s3.py`): global (ListBuckets once, then per-bucket checks). Checks public access block config, ACL grants, policy existence, versioning, encryption, logging. Stamps `S3_PUBLIC_ACCESS`, `S3_NO_VERSIONING`, etc. S3 buckets have no graph edges (they're standalone global resources).
+**S3 connector**: global (ListBuckets once, then per-bucket checks). Checks public access block config, ACL grants, policy existence, versioning, encryption, logging. Stamps `S3_PUBLIC_ACCESS`, `S3_NO_VERSIONING`, etc. S3 buckets have no graph edges (they're standalone global resources).
 
-**Lambda** (`connectors/aws/lambda_.py`): per region. Extracts VPC config and execution role ARN. Masks environment variable values (stored as `{"KEY": "***"}`). Builds `IN_VPC`, `MEMBER_OF_SG` edges. `EXECUTES_AS` edges are resolved later in `graph_builder.py` after IAM roles are written.
+**Lambda connector**: per region. Extracts VPC config and execution role ARN. Masks environment variable values (stored as `{"KEY": "***"}`). Builds `IN_VPC`, `MEMBER_OF_SG` edges. `EXECUTES_AS` edges are resolved later by `GraphBuilder` after IAM roles are written.
 
-**RDS** (`connectors/aws/rds.py`): per region. Checks `PubliclyAccessible`, `StorageEncrypted`, `MultiAZ`. Builds `IN_VPC`, `MEMBER_OF_SG` edges.
+**RDS connector**: per region. Checks `PubliclyAccessible`, `StorageEncrypted`, `MultiAZ`. Builds `IN_VPC`, `MEMBER_OF_SG` edges.
 
-### 4.3 `graph_builder.py` — `GraphBuilder`
+### 4.3 GraphBuilder
 
 The orchestrator. One instance per scan job, injected with a `Neo4jClient`.
 
@@ -395,7 +395,7 @@ Execution order:
 
 The `Semaphore(20)` bounds prevent overwhelming Neo4j with concurrent writes. Non-fatal errors (e.g., access denied in one region) are collected in `ScanResult.errors`, not raised.
 
-### 4.4 `cloudtrail_poller.py` — `CloudTrailPoller`
+### 4.4 CloudTrailPoller
 
 Not yet integrated into scans (Phase future). Polls `cloudtrail.lookup_events()` every 60 seconds. Watches for mutation events: `CreateBucket`, `AuthorizeSecurityGroupIngress`, `AttachRolePolicy`, `ModifyDBInstance`, etc. Intended for incremental graph updates — when a mutation event fires, only re-scan the affected resource rather than a full account scan.
 
@@ -405,11 +405,11 @@ Not yet integrated into scans (Phase future). Polls `cloudtrail.lookup_events()`
 
 **Purpose**: Provider-agnostic LLM reasoning layer. The agent reads the graph via 4 read-only tools, reasons about risk and attack paths, and produces a structured `AnalysisResult`. Any Anthropic or OpenAI-compatible provider can be dropped in without changing the tool-use loop.
 
-### 5.0 `backends/` — LLM provider abstraction
+### 5.0 LLM provider abstraction
 
-The `backends/` sub-package isolates all provider-specific code behind a single `LLMBackend` Protocol. `SentinelAgent` calls only `backend.stream_turn(...)` and processes provider-agnostic events.
+The backends sub-package isolates all provider-specific code behind a single `LLMBackend` Protocol. `SentinelAgent` calls only `backend.stream_turn(...)` and processes provider-agnostic events.
 
-**`backends/base.py`** — Protocol and stream event dataclasses:
+**Protocol and stream event dataclasses**:
 
 ```python
 @dataclass class TextChunk:     text: str
@@ -426,19 +426,19 @@ class LLMBackend(Protocol):
 
 Messages passed to `stream_turn` are always in **OpenAI format** (`{"role": "user"|"assistant"|"tool", ...}`). Each backend translates internally.
 
-**`backends/anthropic.py`** — `AnthropicBackend`:
+**AnthropicBackend**:
 - `_to_anthropic_messages()` converts OpenAI-format history to Anthropic format:
   - `assistant` with `tool_calls` → `assistant` with `tool_use` content blocks
   - Consecutive `tool` messages → single `user` message with `tool_result` blocks
 - `_pending_thinking_blocks` — thinking blocks (with `signature`) from the previous turn are stored here and injected into the next Anthropic-format assistant message, preserving multi-turn correctness
 - Emits `ThinkingChunk` events for `thinking_delta` stream tokens when extended thinking is active
 
-**`backends/openai_.py`** — `OpenAIBackend`:
+**OpenAIBackend**:
 - Works with any OpenAI Chat Completions API: standard OpenAI, Groq, Ollama, Together AI, vLLM
 - Configurable `base_url` parameter; pass `api_key="none"` for local endpoints
 - `enable_thinking` is silently ignored (Anthropic-only feature)
 
-**`backends/__init__.py`** — `create_backend(settings) -> LLMBackend` factory:
+**`create_backend(settings) -> LLMBackend`** factory:
 
 ```python
 def create_backend(settings) -> LLMBackend:
@@ -452,7 +452,7 @@ def create_backend(settings) -> LLMBackend:
                             tool_schemas=TOOL_SCHEMAS)
 ```
 
-### 5.1 `models.py`
+### 5.1 SSE events and AnalysisResult
 
 **SSE wire format** — every event is a JSON line:
 
@@ -479,7 +479,7 @@ class AnalysisResult(BaseModel):
 
 Stored on Neo4j as: `n.agent_analysis = json.dumps(result.model_dump())`, `n.agent_analyzed_at = "..."`
 
-### 5.2 `tools.py` — `AgentTools`
+### 5.2 AgentTools
 
 4 read-only tools available to the LLM during the tool-use loop:
 
@@ -499,13 +499,13 @@ Stored on Neo4j as: `n.agent_analysis = json.dumps(result.model_dump())`, `n.age
 
 **`to_openai_tools(schemas)`** — converts Anthropic schema shape `{name, description, input_schema}` to OpenAI shape `{type: "function", function: {name, description, parameters}}`.
 
-### 5.3 `prompts.py`
+### 5.3 Prompts
 
 **System prompt**: instructs Claude that it's a cloud security architect, describes the graph structure, the 4 available tools, and requires output in `<analysis>…</analysis>` XML with specific sub-tags (`risk_narrative`, `priority_score`, `remediation_steps`, etc.).
 
 **`build_finding_message(node_id, posture_flags, account_id)`**: constructs the initial user message for a finding analysis — includes node ID, all posture flags with their CIS rule descriptions, and asks for a structured analysis.
 
-### 5.4 `agent.py` — `SentinelAgent`
+### 5.4 SentinelAgent
 
 ```python
 agent = SentinelAgent(neo4j_client=client, settings=AgentSettings(...))
@@ -628,7 +628,7 @@ The `AnalysisResult` cached on the Neo4j node (`n.agent_analysis`) is identical 
 
 **Purpose**: maps CIS posture flags to concrete AWS remediations, enforces human approval, and executes safe boto3 calls with graph write-back.
 
-### 6.1 `models.py`
+### 6.1 Models
 
 **`RemediationAction`** — 8 supported actions:
 
@@ -665,7 +665,7 @@ job.output           # dict from boto3 on success
 job.error            # str on failure
 ```
 
-### 6.2 `planner.py` — `RemediationPlanner`
+### 6.2 RemediationPlanner
 
 ```python
 planner = RemediationPlanner()
@@ -690,7 +690,7 @@ _FLAG_MAP = {
 
 Each factory receives the full Neo4j node dict and returns a `RemediationProposal` with the correct `params` (e.g., `{"bucket_name": "my-bucket"}` for S3 actions). Unknown flags are silently skipped.
 
-### 6.3 `executor.py` — `RemediationExecutor`
+### 6.3 RemediationExecutor
 
 ```python
 executor = RemediationExecutor()
@@ -707,7 +707,7 @@ Execution flow:
 
 Neo4j write-back failure is non-fatal (logged as warning) — the AWS change succeeded regardless.
 
-### 6.4 Remediators (`remediators/*.py`)
+### 6.4 Remediators
 
 Each remediator is a **sync function** called via `asyncio.to_thread()`:
 
@@ -716,10 +716,10 @@ def execute(params: dict, session: boto3.Session) -> dict:
     """Execute the remediation. Return a summary dict."""
 ```
 
-- `s3.py`: `block_public_access`, `enable_versioning`, `enable_sse`, `enable_logging`
-- `ec2.py`: `enable_ebs_encryption`
-- `cloudtrail.py`: `enable_trail` (creates S3 bucket + bucket policy + CloudTrail trail + start logging), `enable_log_validation`
-- `rds.py`: `disable_public_access`
+- S3: `block_public_access`, `enable_versioning`, `enable_sse`, `enable_logging`
+- EC2: `enable_ebs_encryption`
+- CloudTrail: `enable_trail` (creates S3 bucket + bucket policy + CloudTrail trail + start logging), `enable_log_validation`
+- RDS: `disable_public_access`
 
 `cloudtrail.enable_trail` is the most complex: it first checks if the trail already exists, creates the target S3 bucket with the appropriate bucket policy if not, then creates the trail and starts logging. If the trail exists, it just starts logging.
 
@@ -729,7 +729,7 @@ def execute(params: dict, session: boto3.Session) -> dict:
 
 **Purpose**: HTTP layer. Thin bridge between external clients and the four packages. Owns dependency injection, request validation, background tasks, and SSE streaming.
 
-### 7.1 `config.py` — `Settings`
+### 7.1 Settings
 
 `pydantic-settings` class loaded from environment / `.env` file. All settings are available via `get_settings()` which is `@lru_cache` — one instance per process.
 
@@ -761,7 +761,7 @@ sentinel_db_path     # path to SQLite file (default: ./sentinel.db)
 enable_cloudtrail_polling, aws_account_id, cloudtrail_poll_interval
 ```
 
-### 7.2 `deps.py` — Dependency injection
+### 7.2 Dependency injection
 
 Two module-level singletons — one for Neo4j, one for the SQLite store — initialised at startup and injectable via FastAPI `Depends`:
 
@@ -785,7 +785,7 @@ SettingsDep  = Annotated[Settings,         Depends(get_settings)]
 
 Both `get_store()` and `get_neo4j_client()` raise `RuntimeError` when called before startup — the lifespan checks for this to detect pre-injected test fixtures (E2E tests inject a `:memory:` store to avoid creating `./sentinel.db`).
 
-### 7.3 `main.py` — App lifecycle
+### 7.3 App lifecycle
 
 ```python
 @asynccontextmanager
@@ -836,7 +836,7 @@ All routers mounted at `/api/v1`:
 
 ### 7.4 Router quick reference
 
-**`routers/scan.py`**
+**Scan**
 
 ```
 POST /scan/trigger                                             rate: 10/min
@@ -852,7 +852,7 @@ GET  /scan/
 
 Job state persisted in SQLite (`scan_jobs` table) via `StoreDep`. `BackgroundTasks.add_task(_run_scan, ..., store=store)` calls `GraphBuilder.full_scan()`, then writes `status=completed/failed` back via `store.update_scan_job()`.
 
-**`routers/graph.py`**
+**Graph**
 
 ```
 GET  /graph/nodes?type=S3Bucket&region=us-east-1&limit=50
@@ -862,7 +862,7 @@ POST /graph/query  (requires ENABLE_RAW_CYPHER=true)
     body: { cypher, params? }
 ```
 
-**`routers/posture.py`**
+**Posture**
 
 ```
 GET  /posture/findings?severity=CRITICAL&resource_type=S3Bucket
@@ -870,7 +870,7 @@ GET  /posture/summary?account_id=...
 GET  /posture/cis-rules
 ```
 
-**`routers/agent.py`**
+**Agent**
 
 ```
 POST /agent/findings/{node_id}/analyze?thinking=false   rate: 20/min
@@ -888,7 +888,7 @@ POST /agent/brief?account_id=...&top_n=5&thinking=false
 
 SSE headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` (disables nginx proxy buffering).
 
-**`routers/remediation.py`**
+**Remediation**
 
 ```
 POST /remediation/propose            rate: 30/min
@@ -921,9 +921,9 @@ Job state persisted in SQLite (`remediation_jobs` table) via `StoreDep`. Approve
 
 ### 8.2 Key Components
 
-**`components/graph/CytoscapeCanvas.tsx`**: wraps Cytoscape.js. Receives `{ nodes, edges }` props. Node colors by `resource_type`, border glow by highest severity flag. Uses `cola` force-directed layout. Emits `onNodeClick(nodeId)`. Dynamically imported (no SSR) because Cytoscape uses `window`.
+**CytoscapeCanvas**: wraps Cytoscape.js. Receives `{ nodes, edges }` props. Node colors by `resource_type`, border glow by highest severity flag. Uses `cola` force-directed layout. Emits `onNodeClick(nodeId)`. Dynamically imported (no SSR) because Cytoscape uses `window`.
 
-**`components/agent/AnalysisPanel.tsx`**: SSE streaming display. Shows a "Analyze with AI" button; on click calls `agentApi.streamAnalysis()`. As events arrive:
+**AnalysisPanel**: SSE streaming display. Shows a "Analyze with AI" button; on click calls `agentApi.streamAnalysis()`. As events arrive:
 - `text_delta` → appends to live text display
 - `tool_use` → adds pill to "Graph queries" list
 - `analysis_complete` → replaces live display with final structured output
@@ -931,11 +931,11 @@ Job state persisted in SQLite (`remediation_jobs` table) via `StoreDep`. Approve
 
 Also accepts `initialAnalysis` prop — if passed (from cached `GET /analysis`), renders the cached result immediately without streaming.
 
-**`components/remediation/RemediationProposalCard.tsx`**: shows action label, resource info, description, risk reduction panel, output/error on completion. Approve/Reject buttons call parent callbacks.
+**RemediationProposalCard**: shows action label, resource info, description, risk reduction panel, output/error on completion. Approve/Reject buttons call parent callbacks.
 
-**`components/remediation/ApprovalModal.tsx`**: confirmation dialog overlay. Two modes: `"approve"` (warns about immediate AWS change) and `"reject"`. Calls `remediationApi.approve()` or `.reject()` on confirm, updates parent job state.
+**ApprovalModal**: confirmation dialog overlay. Two modes: `"approve"` (warns about immediate AWS change) and `"reject"`. Calls `remediationApi.approve()` or `.reject()` on confirm, updates parent job state.
 
-### 8.3 `lib/api.ts`
+### 8.3 API client
 
 All API calls centralized here. Uses a shared `apiFetch<T>` helper that:
 - Prepends `NEXT_PUBLIC_API_URL` (default: `http://localhost:8000/api/v1`)
@@ -1061,7 +1061,7 @@ Browser               API               Planner/Executor      Neo4j       AWS
 
 ## 10. Infrastructure
 
-### 10.1 `docker-compose.yml`
+### 10.1 Docker Compose
 
 Two services:
 
@@ -1075,14 +1075,14 @@ Two services:
 - Health check: `cypher-shell "MATCH (n) RETURN count(n)"` (30s timeout, 10s interval)
 
 **`api`** (optional, profile `api`):
-- Built from `packages/api/Dockerfile`
+- Built from the API Dockerfile
 - Port `8000`
 - Depends on neo4j health check passing
 - Environment from `.env`
 
 For local development, run the API directly with uvicorn (`make dev`) rather than through Docker.
 
-### 10.2 `Makefile` targets
+### 10.2 Make targets
 
 | Target | What it does |
 |--------|-------------|
@@ -1104,36 +1104,11 @@ For local development, run the API directly with uvicorn (`make dev`) rather tha
 
 ### 11.1 Structure
 
-```
-tests/
-  conftest.py              # shared moto fixtures (mock AWS services)
-  unit/
-    test_models.py         # Pydantic validation, Neo4j serialization
-    test_cis_rules.py      # CIS rule schema + Cypher check syntax
-    test_graph_builder.py  # GraphBuilder with mock Neo4j + moto
-    test_agent_tools.py    # Cypher safety guard, tool schemas, dispatch
-    test_agent_loop.py     # Agent streaming loop, XML parsing, caching
-    test_agent_thinking.py # Extended thinking kwargs + ThinkingChunk events
-    test_backends.py       # to_openai_tools(), AnthropicBackend message translation
-    test_planner.py        # RemediationPlanner flag→action mapping
-    test_remediators.py    # Each remediator with mocked boto3
-    connectors/
-      test_ec2.py          # EC2/SG/VPC discovery with moto
-      test_iam.py          # IAM discovery with moto
-      test_s3.py           # S3 discovery with moto
-      test_rds.py          # RDS discovery with moto
-  integration/
-    test_api.py            # FastAPI TestClient, endpoint response shapes
-    test_full_scan_posture.py  # Full scan + evaluation with moto + mock Neo4j
-  e2e/
-    conftest.py            # Neo4j testcontainer fixture (session-scoped)
-    test_scan_to_graph.py  # Real Neo4j + moto: scan writes nodes
-    test_posture_pipeline.py   # CIS evaluation against real graph
-    test_api_e2e.py        # API endpoints against live Neo4j
-    test_graph_traversal.py    # Cypher attack path queries
-    test_agent_api_e2e.py  # Agent HTTP API with MockBackend + real Neo4j
-    test_remediation_e2e.py    # Planner + executor + real Neo4j
-```
+**Unit** — fast, no external deps. AWS mocked via `moto`; Neo4j mocked via `AsyncMock`. Covers: Pydantic model validation and Neo4j serialization; CIS rule schema and Cypher syntax; GraphBuilder with mock AWS and Neo4j; agent tool dispatch and Cypher safety guard; agent streaming loop, XML parsing, and result caching; extended thinking kwargs and ThinkingChunk events; LLM backend protocol and AnthropicBackend message translation; RemediationPlanner flag-to-action mapping; each remediator with mocked boto3; all five AWS connectors (EC2/SG/VPC, IAM, S3, RDS, Lambda) with moto.
+
+**Integration** — FastAPI TestClient; endpoint response shapes; full scan + evaluation with moto and in-memory Neo4j mock.
+
+**E2E** (`pytest -m e2e`, requires Docker) — real Neo4j 5 Community container via testcontainers. Covers: scan writes nodes and edges to real graph; CIS evaluation against real graph; API endpoints against live Neo4j; Cypher attack path queries; agent HTTP API with MockBackend and real Neo4j; remediation planner + executor against real Neo4j.
 
 ### 11.2 Patterns
 
@@ -1145,7 +1120,7 @@ tests/
 
 Async tests use `pytest-asyncio` with `asyncio_mode = "auto"` in `pyproject.toml` — no `@pytest.mark.asyncio` decorator needed.
 
-**Agent tests**: inject a `MockBackend` directly onto `agent._backend` — no real LLM API calls are made. `test_agent_loop.py` and `test_agent_thinking.py` use a `CapturingMockBackend` that records `stream_turn` kwargs and yields configurable event sequences. `test_backends.py` tests `AnthropicBackend._to_anthropic_messages()` in isolation with no network I/O.
+**Agent tests**: inject a `MockBackend` directly onto `agent._backend` — no real LLM API calls are made. Agent unit tests use a `CapturingMockBackend` that records `stream_turn` kwargs and yields configurable event sequences. Backend message translation is tested against `AnthropicBackend._to_anthropic_messages()` in isolation with no network I/O.
 
 ---
 

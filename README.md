@@ -45,17 +45,17 @@ graph TD
 
 ## Package Overview
 
-| Package | Path | Responsibility |
-|---------|------|----------------|
-| `sentinel-core` | `packages/core/` | Graph schema (Pydantic nodes/edges), async Neo4j client, CIS rules (~30), posture evaluator, pre-built Cypher queries |
-| `sentinel-perception` | `packages/perception/` | 5 AWS connectors (boto3), `GraphBuilder` orchestrator, CloudTrail change poller |
-| `sentinel-agent` | `packages/agent/` | `SentinelAgent` — provider-agnostic tool-use loop, `LLMBackend` Protocol, `AnthropicBackend` + `OpenAIBackend`, 4 read-only graph tools, SSE events, `AnalysisResult` caching, extended thinking |
-| `sentinel-remediation` | `packages/remediation/` | `RemediationPlanner` (flags → jobs), `RemediationExecutor` (boto3 dispatch + Neo4j write-back), 8 safe remediators |
-| `sentinel-api` | `packages/api/` | FastAPI app, 6 routers, dependency injection, background tasks, SSE streaming, SQLite persistence |
+| Package | Responsibility |
+|---------|----------------|
+| `sentinel-core` | Graph schema (Pydantic nodes/edges), async Neo4j client, CIS rules (~30), posture evaluator, pre-built Cypher queries |
+| `sentinel-perception` | 5 AWS connectors (boto3), `GraphBuilder` orchestrator, CloudTrail change poller |
+| `sentinel-agent` | `SentinelAgent` — provider-agnostic tool-use loop, `LLMBackend` Protocol, `AnthropicBackend` + `OpenAIBackend`, 4 read-only graph tools, SSE events, `AnalysisResult` caching, extended thinking |
+| `sentinel-remediation` | `RemediationPlanner` (flags → jobs), `RemediationExecutor` (boto3 dispatch + Neo4j write-back), 8 safe remediators |
+| `sentinel-api` | FastAPI app, 6 routers, dependency injection, background tasks, SSE streaming, SQLite persistence |
 
 Dependency order: `sentinel-api` → `{core, perception, agent, remediation}` → (nothing internal)
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a complete file-by-file breakdown and all data flows.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed breakdown of every component and all data flows.
 
 ---
 
@@ -418,41 +418,6 @@ Unit and integration tests use **moto** for AWS mocking (S3, EC2, IAM, RDS, Clou
 | `HTTP_PORT` | `80` | Host port exposed by Nginx in production |
 
 ---
-
-## Project Structure
-
-```
-sentinel/
-├── packages/
-│   ├── core/            sentinel-core        (schema, Neo4j, CIS rules)
-│   ├── perception/      sentinel-perception  (AWS discovery, GraphBuilder)
-│   ├── agent/           sentinel-agent       (provider-agnostic tool-use loop)
-│   │   └── sentinel_agent/
-│   │       └── backends/  (LLMBackend Protocol, AnthropicBackend, OpenAIBackend)
-│   ├── remediation/     sentinel-remediation (planner, executor, remediators)
-│   └── api/             sentinel-api         (FastAPI, routers, deps, SQLite store)
-├── frontend/
-│   ├── app/             (Next.js App Router pages)
-│   │   ├── page.tsx     (Dashboard + scan progress)
-│   │   ├── graph/       (Cytoscape.js graph explorer)
-│   │   ├── findings/    (findings table + detail + analysis panel)
-│   │   ├── scans/       (scan history)
-│   │   └── remediations/(propose / approve / reject)
-│   ├── components/      (React components)
-│   └── lib/api.ts       (typed API client)
-├── tests/
-│   ├── unit/            (moto + AsyncMock, no Docker)
-│   ├── integration/     (FastAPI TestClient, no Docker)
-│   └── e2e/             (testcontainers Neo4j, requires Docker)
-├── nginx/               (Nginx reverse-proxy config)
-├── docker-compose.yml   (Neo4j local dev)
-├── docker-compose.prod.yml (full prod stack)
-├── Makefile             (dev shortcuts)
-├── pyproject.toml       (uv workspace root)
-├── uv.lock              (pinned dependency versions)
-├── ARCHITECTURE.md      (full component reference)
-└── CLAUDE.md            (project context for AI assistants)
-```
 
 ---
 

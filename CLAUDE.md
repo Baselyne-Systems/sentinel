@@ -29,12 +29,12 @@ SENTINEL is an autonomous cloud security architect agent that continuously obser
 ```
 
 ### Packages
-| Package | Path | Purpose |
-|---------|------|---------|
-| `sentinel-core` | `packages/core/` | Graph schema (Pydantic models), Neo4j client, CIS rules, posture evaluator |
-| `sentinel-perception` | `packages/perception/` | AWS connectors (boto3), graph builder, CloudTrail poller |
-| `sentinel-api` | `packages/api/` | FastAPI REST API |
-| Frontend | `frontend/` | Next.js 14 + Cytoscape.js UI |
+| Package | Purpose |
+|---------|---------|
+| `sentinel-core` | Graph schema (Pydantic models), Neo4j client, CIS rules, posture evaluator |
+| `sentinel-perception` | AWS connectors (boto3), graph builder, CloudTrail poller |
+| `sentinel-api` | FastAPI REST API |
+| Frontend | Next.js 14 + Cytoscape.js UI |
 
 ---
 
@@ -42,7 +42,7 @@ SENTINEL is an autonomous cloud security architect agent that continuously obser
 
 1. **Graph-first:** Everything is a node or edge. Security analysis is graph traversal.
 2. **Async throughout:** All I/O (AWS API calls, Neo4j writes) is async.
-3. **Extensible connectors:** Each AWS service is a separate file implementing a standard `discover()` interface.
+3. **Extensible connectors:** Each AWS service is a separate connector implementing a standard `discover()` interface.
 4. **Typed rules:** CIS benchmark rules are Python dataclasses with embedded Cypher checks — no document DB needed.
 5. **Cross-account ready:** All AWS connectors accept an `assume_role_arn` for multi-account support from day one.
 6. **No hardcoded credentials:** All config via environment variables (pydantic-settings).
@@ -67,43 +67,6 @@ SENTINEL is an autonomous cloud security architect agent that continuously obser
 | Frontend language | TypeScript | 5.x |
 | Graph visualization | Cytoscape.js | 3.x |
 | Container | Docker + docker-compose | latest |
-
----
-
-## Key File Map
-
-| File | Purpose |
-|------|---------|
-| `packages/core/sentinel_core/models/enums.py` | ResourceType, EdgeType, PostureFlag enums |
-| `packages/core/sentinel_core/models/nodes.py` | All graph node Pydantic models |
-| `packages/core/sentinel_core/models/edges.py` | All graph edge Pydantic models |
-| `packages/core/sentinel_core/graph/client.py` | Async Neo4j driver wrapper |
-| `packages/core/sentinel_core/graph/queries.py` | Canned Cypher queries |
-| `packages/core/sentinel_core/knowledge/rules.py` | CIS AWS Benchmark v1.5 rules |
-| `packages/core/sentinel_core/knowledge/evaluator.py` | PostureEvaluator |
-| `packages/perception/sentinel_perception/connectors/aws/iam.py` | IAM discovery |
-| `packages/perception/sentinel_perception/connectors/aws/ec2.py` | EC2/VPC/SG/Subnet discovery |
-| `packages/perception/sentinel_perception/connectors/aws/s3.py` | S3 bucket discovery |
-| `packages/perception/sentinel_perception/connectors/aws/lambda_.py` | Lambda function discovery |
-| `packages/perception/sentinel_perception/connectors/aws/rds.py` | RDS instance discovery |
-| `packages/perception/sentinel_perception/graph_builder.py` | Orchestrates all discovery |
-| `packages/perception/sentinel_perception/cloudtrail_poller.py` | Change detection via CloudTrail |
-| `packages/api/sentinel_api/main.py` | FastAPI entry point |
-| `packages/api/sentinel_api/routers/graph.py` | /api/v1/graph endpoints |
-| `packages/api/sentinel_api/routers/posture.py` | /api/v1/posture endpoints |
-| `packages/api/sentinel_api/routers/scan.py` | /api/v1/scan endpoints |
-| `packages/api/sentinel_api/routers/accounts.py` | /api/v1/accounts endpoints |
-| `packages/agent/sentinel_agent/backends/base.py` | LLMBackend Protocol + stream event dataclasses |
-| `packages/agent/sentinel_agent/backends/anthropic.py` | AnthropicBackend (streaming tool-use, extended thinking) |
-| `packages/agent/sentinel_agent/backends/openai_.py` | OpenAIBackend (any OpenAI-compatible endpoint) |
-| `packages/agent/sentinel_agent/backends/__init__.py` | create_backend() factory |
-| `packages/agent/sentinel_agent/agent.py` | SentinelAgent — backend-agnostic tool-use loop |
-| `packages/agent/sentinel_agent/tools.py` | AgentTools, TOOL_SCHEMAS, to_openai_tools() |
-| `frontend/app/page.tsx` | Posture dashboard |
-| `frontend/app/graph/page.tsx` | Graph explorer |
-| `frontend/app/findings/page.tsx` | Findings table |
-| `docker-compose.yml` | Neo4j local dev |
-| `Makefile` | Dev shortcuts |
 
 ---
 
