@@ -11,18 +11,23 @@ Creates and configures the FastAPI application with:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentinel_core.graph.client import Neo4jClient
+from sentinel_perception.cloudtrail_poller import CloudTrailPoller
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from sentinel_api import __version__
 from sentinel_api.config import get_settings
-from sentinel_api.deps import get_neo4j_client, set_neo4j_client
+from sentinel_api.deps import get_neo4j_client, get_store, set_neo4j_client, set_store
+from sentinel_api.limiter import limiter
+from sentinel_api.middleware import ApiKeyMiddleware, SecurityHeadersMiddleware
 from sentinel_api.routers import accounts, agent, graph, posture, remediation, scan
-from sentinel_core.graph.client import Neo4jClient
-from sentinel_perception.cloudtrail_poller import CloudTrailPoller
+from sentinel_api.store import SentinelStore
 
 logger = logging.getLogger(__name__)
 
@@ -82,13 +87,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     - Closes the Neo4j connection pool
     """
     # If a client was pre-injected (e.g. in tests), skip startup/teardown.
+    neo4j_pre_injected = False
     try:
         get_neo4j_client()
-        logger.info("SENTINEL API v%s ready (pre-injected client)", __version__)
+        neo4j_pre_injected = True
+    except RuntimeError:
+        pass
+
+    store_pre_injected = False
+    try:
+        get_store()
+        store_pre_injected = True
+    except RuntimeError:
+        pass
+
+    if neo4j_pre_injected and store_pre_injected:
+        logger.info("SENTINEL API v%s ready (pre-injected client + store)", __version__)
         yield
         return
-    except RuntimeError:
-        pass  # No pre-injected client — proceed with normal startup.
 
     settings = get_settings()
 
@@ -96,12 +112,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         uri=settings.neo4j_uri,
         user=settings.neo4j_user,
         password=settings.neo4j_password,
-    )
+    ) if not neo4j_pre_injected else None
+
+    store: SentinelStore | None = None
     poller: CloudTrailPoller | None = None
     try:
-        await client.connect()
-        await client.ensure_indexes()
-        set_neo4j_client(client)
+        if client is not None:
+            await client.connect()
+            await client.ensure_indexes()
+            set_neo4j_client(client)
+
+        if not store_pre_injected:
+            store = SentinelStore(db_path=settings.sentinel_db_path)
+            await store.initialize()
+            set_store(store)
+
         logger.info("SENTINEL API v%s ready", __version__)
 
         if settings.enable_cloudtrail_polling:
@@ -112,7 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             else:
                 poller = CloudTrailPoller(
-                    neo4j_client=client,
+                    neo4j_client=get_neo4j_client(),
                     account_id=settings.aws_account_id,
                     regions=settings.regions_list,
                     poll_interval=settings.cloudtrail_poll_interval,
@@ -130,7 +155,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if poller is not None:
             await poller.stop()
-        await client.close()
+        if client is not None:
+            await client.close()
+        if store is not None:
+            await store.close()
+            set_store(None)
 
 
 def create_app() -> FastAPI:
@@ -195,6 +224,14 @@ def create_app() -> FastAPI:
             },
         ],
     )
+
+    # Rate limiter (slowapi)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # Middleware stack (outermost first — SecurityHeaders wraps everything)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ApiKeyMiddleware)
 
     # CORS (allow frontend dev server)
     app.add_middleware(

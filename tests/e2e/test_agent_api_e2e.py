@@ -40,8 +40,9 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from sentinel_agent.agent import AgentSettings, SentinelAgent
-from sentinel_api.deps import get_sentinel_agent, set_neo4j_client
+from sentinel_api.deps import get_sentinel_agent, set_neo4j_client, set_store
 from sentinel_api.main import create_app
+from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.models.nodes import S3Bucket, SecurityGroup
 
@@ -179,7 +180,7 @@ async def _collect_sse_events(response) -> list[dict[str, Any]]:
 
 
 @pytest_asyncio.fixture()
-async def app_client(neo4j_client: Neo4jClient):
+async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
     """
     AsyncClient backed by real testcontainers Neo4j with mock Anthropic.
 
@@ -188,6 +189,7 @@ async def app_client(neo4j_client: Neo4jClient):
     is mocked — so no API key is required and responses are deterministic.
     """
     set_neo4j_client(neo4j_client)
+    set_store(job_store)
 
     def _mock_agent() -> SentinelAgent:
         agent = SentinelAgent(
@@ -209,9 +211,10 @@ async def app_client(neo4j_client: Neo4jClient):
 
 
 @pytest_asyncio.fixture()
-async def app_client_thinking(neo4j_client: Neo4jClient):
+async def app_client_thinking(neo4j_client: Neo4jClient, job_store: SentinelStore):
     """Like ``app_client`` but the mock Anthropic emits thinking chunks."""
     set_neo4j_client(neo4j_client)
+    set_store(job_store)
 
     def _mock_agent() -> SentinelAgent:
         agent = SentinelAgent(

@@ -8,12 +8,25 @@ from fastapi import Depends
 
 from sentinel_agent.agent import AgentSettings, SentinelAgent
 from sentinel_api.config import Settings, get_settings
+from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.graph.queries import GraphQueries
 from sentinel_core.knowledge.evaluator import PostureEvaluator
 
 # Module-level singletons (initialized at startup)
 _neo4j_client: Neo4jClient | None = None
+_store: SentinelStore | None = None
+
+
+def get_store() -> SentinelStore:
+    if _store is None:
+        raise RuntimeError("Job store not initialized. Check lifespan setup.")
+    return _store
+
+
+def set_store(store: SentinelStore | None) -> None:
+    global _store
+    _store = store
 
 
 def get_neo4j_client() -> Neo4jClient:
@@ -58,3 +71,4 @@ Neo4jDep = Annotated[Neo4jClient, Depends(get_neo4j_client)]
 QueriesDep = Annotated[GraphQueries, Depends(get_graph_queries)]
 EvaluatorDep = Annotated[PostureEvaluator, Depends(get_posture_evaluator)]
 AgentDep = Annotated[SentinelAgent, Depends(get_sentinel_agent)]
+StoreDep = Annotated[SentinelStore, Depends(get_store)]

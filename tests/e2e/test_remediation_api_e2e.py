@@ -30,8 +30,9 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from sentinel_api.deps import set_neo4j_client
+from sentinel_api.deps import set_neo4j_client, set_store
 from sentinel_api.main import create_app
+from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.models.enums import PostureFlag
 from sentinel_core.models.nodes import S3Bucket
@@ -44,20 +45,22 @@ ACCOUNT_ID = "123456789012"
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture(autouse=True)
-def clear_job_store():
-    """Clear the in-memory job store before and after every test."""
-    from sentinel_api.routers.remediation import _jobs
-
-    _jobs.clear()
+@pytest_asyncio.fixture(autouse=True)
+async def clear_job_store(job_store: SentinelStore):
+    """Truncate the remediation_jobs table before and after every test."""
+    assert job_store._db is not None
+    await job_store._db.execute("DELETE FROM remediation_jobs")
+    await job_store._db.commit()
     yield
-    _jobs.clear()
+    await job_store._db.execute("DELETE FROM remediation_jobs")
+    await job_store._db.commit()
 
 
 @pytest_asyncio.fixture()
-async def app_client(neo4j_client: Neo4jClient):
-    """AsyncClient backed by real testcontainers Neo4j."""
+async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
+    """AsyncClient backed by real testcontainers Neo4j and in-memory store."""
     set_neo4j_client(neo4j_client)
+    set_store(job_store)
     app = create_app()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     agent_enable_thinking: bool = False
     agent_thinking_budget_tokens: int = 8000
 
+    # Security
+    api_key: str = ""                  # If set, all requests must include X-API-Key header
+    rate_limit_enabled: bool = False   # Set true in production; keep false for tests
+
+    # Persistence
+    sentinel_db_path: str = "./sentinel.db"
+
     # Phase 3: CloudTrail polling (opt-in)
     enable_cloudtrail_polling: bool = False
     aws_account_id: str = ""          # required when enable_cloudtrail_polling=True

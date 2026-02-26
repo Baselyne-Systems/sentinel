@@ -28,11 +28,13 @@ def mock_neo4j():
 
 @pytest.fixture
 def api_client(mock_neo4j):
-    """FastAPI test client with mocked Neo4j."""
+    """FastAPI test client with mocked Neo4j and in-memory SQLite store."""
     from sentinel_api.deps import set_neo4j_client as _set_client
+    from sentinel_api.deps import set_store as _set_store
 
-    # Clear any client injected by e2e tests so the lifespan runs normally
+    # Clear any singletons injected by e2e tests so the lifespan runs normally
     _set_client(None)  # type: ignore[arg-type]
+    _set_store(None)
     app = create_app()
 
     with patch("sentinel_api.main.Neo4jClient") as MockClient:
@@ -46,10 +48,28 @@ def api_client(mock_neo4j):
         instance.upsert_edge = AsyncMock()
         instance.clear_account = AsyncMock()
 
-        with patch("sentinel_api.deps.set_neo4j_client"):
-            with patch("sentinel_api.deps.get_neo4j_client", return_value=instance):
-                with TestClient(app) as client:
-                    yield client, instance
+        with patch("sentinel_api.main.SentinelStore") as MockStore:
+            # Configure the mock store with sensible defaults so router logic works
+            mock_store_instance = MockStore.return_value
+            mock_store_instance.initialize = AsyncMock()
+            mock_store_instance.close = AsyncMock()
+            mock_store_instance.create_scan_job = AsyncMock(return_value=None)
+            mock_store_instance.update_scan_job = AsyncMock(return_value=None)
+            mock_store_instance.get_scan_job = AsyncMock(return_value=None)
+            mock_store_instance.list_scan_jobs = AsyncMock(return_value=[])
+            mock_store_instance.create_remediation_job = AsyncMock(return_value=None)
+            mock_store_instance.update_remediation_job = AsyncMock(return_value=None)
+            mock_store_instance.get_remediation_job = AsyncMock(return_value=None)
+            mock_store_instance.list_remediation_jobs = AsyncMock(return_value=[])
+            mock_store_instance.upsert_account = AsyncMock(return_value=None)
+            mock_store_instance.get_account = AsyncMock(return_value=None)
+            mock_store_instance.list_accounts = AsyncMock(return_value=[])
+            mock_store_instance.delete_account = AsyncMock(return_value=None)
+
+            with patch("sentinel_api.deps.set_neo4j_client"):
+                with patch("sentinel_api.deps.get_neo4j_client", return_value=instance):
+                    with TestClient(app) as client:
+                        yield client, instance
 
 
 def test_health_endpoint(api_client):

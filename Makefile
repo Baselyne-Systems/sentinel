@@ -1,4 +1,5 @@
-.PHONY: dev neo4j api scan test lint install clean
+.PHONY: dev neo4j api scan test lint install clean \
+        docker-build docker-push up-prod down-prod logs logs-dev
 
 # ── Env ───────────────────────────────────────────────────────────────────────
 -include .env
@@ -85,6 +86,37 @@ install-frontend:
 
 ## Install everything
 install-all: install install-frontend
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+
+## Build API and frontend Docker images
+docker-build:
+	docker build -t $${REGISTRY:-sentinel}/sentinel-api:$${IMAGE_TAG:-latest} \
+		-f packages/api/Dockerfile .
+	docker build -t $${REGISTRY:-sentinel}/sentinel-frontend:$${IMAGE_TAG:-latest} \
+		./frontend
+
+## Push images to registry (set REGISTRY and IMAGE_TAG env vars)
+docker-push: docker-build
+	docker push $${REGISTRY:-sentinel}/sentinel-api:$${IMAGE_TAG:-latest}
+	docker push $${REGISTRY:-sentinel}/sentinel-frontend:$${IMAGE_TAG:-latest}
+
+## Start full production stack (Neo4j + API + Frontend + Nginx) on port 80
+up-prod:
+	docker compose -f docker-compose.prod.yml up -d
+	@echo "SENTINEL production stack running at http://localhost"
+
+## Stop production stack
+down-prod:
+	docker compose -f docker-compose.prod.yml down
+
+## Tail logs from production stack (Ctrl-C to stop)
+logs:
+	docker compose -f docker-compose.prod.yml logs -f
+
+## Tail logs from dev stack (Ctrl-C to stop)
+logs-dev:
+	docker compose logs -f
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 

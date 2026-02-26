@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Enable standalone output for Docker builds (copies only what's needed).
+  output: "standalone",
   async rewrites() {
     return [
       {

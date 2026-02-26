@@ -27,8 +27,9 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from sentinel_api.deps import set_neo4j_client
+from sentinel_api.deps import set_neo4j_client, set_store
 from sentinel_api.main import create_app
+from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient
 from sentinel_core.knowledge.evaluator import PostureEvaluator
 from sentinel_perception.graph_builder import GraphBuilder
@@ -43,7 +44,7 @@ pytestmark = pytest.mark.e2e
 
 
 @pytest_asyncio.fixture()
-async def app_client(neo4j_client: Neo4jClient):
+async def app_client(neo4j_client: Neo4jClient, job_store: SentinelStore):
     """
     Return an AsyncClient whose app uses the real testcontainers Neo4j.
 
@@ -53,6 +54,7 @@ async def app_client(neo4j_client: Neo4jClient):
     ``NEO4J_URI`` from settings) while still exercising every route handler.
     """
     set_neo4j_client(neo4j_client)
+    set_store(job_store)
     fastapi_app = create_app()
     async with AsyncClient(
         transport=ASGITransport(app=fastapi_app), base_url="http://test"

@@ -8,7 +8,8 @@ the account's resources.
 For same-account scanning (using the API's own credential chain), registration
 is optional — just call POST /scan/trigger directly.
 
-Phase 1: In-memory store. Phase 2: Persist to a database.
+Account registrations are persisted in the SQLite store (sentinel.db) and
+survive API restarts.
 """
 
 from __future__ import annotations
@@ -19,12 +20,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from sentinel_api.deps import StoreDep
 from sentinel_api.schemas import AccountResponse, ErrorResponse
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
-
-# In-memory account store (Phase 1).
-_accounts: dict[str, dict[str, Any]] = {}
 
 
 class AccountRegistration(BaseModel):
@@ -71,7 +70,7 @@ class AccountRegistration(BaseModel):
         200: {"description": "Account registered or updated"},
     },
 )
-async def register_account(body: AccountRegistration) -> dict[str, Any]:
+async def register_account(body: AccountRegistration, store: StoreDep) -> dict[str, Any]:
     """
     Register an AWS account for scanning.
 
@@ -82,25 +81,17 @@ async def register_account(body: AccountRegistration) -> dict[str, Any]:
     For simple same-account scans (AWS_REGIONS env var), registration is optional.
     """
     now = datetime.now(timezone.utc).isoformat()
-    if body.account_id in _accounts:
-        _accounts[body.account_id].update(
-            {
-                "name": body.name or _accounts[body.account_id]["name"],
-                "assume_role_arn": body.assume_role_arn,
-                "regions": body.regions,
-                "updated_at": now,
-            }
-        )
-    else:
-        _accounts[body.account_id] = {
-            "account_id": body.account_id,
-            "name": body.name,
-            "assume_role_arn": body.assume_role_arn,
-            "regions": body.regions,
-            "registered_at": now,
-            "updated_at": now,
-        }
-    return _accounts[body.account_id]
+    existing = await store.get_account(body.account_id)
+    account: dict[str, Any] = {
+        "account_id": body.account_id,
+        "name": body.name or (existing["name"] if existing else ""),
+        "assume_role_arn": body.assume_role_arn,
+        "regions": body.regions,
+        "registered_at": existing["registered_at"] if existing else now,
+        "updated_at": now,
+    }
+    await store.upsert_account(account)
+    return account
 
 
 @router.get(
@@ -112,9 +103,9 @@ async def register_account(body: AccountRegistration) -> dict[str, Any]:
         200: {"description": "All registered accounts"},
     },
 )
-async def list_accounts() -> list[dict[str, Any]]:
+async def list_accounts(store: StoreDep) -> list[dict[str, Any]]:
     """Return all registered AWS accounts."""
-    return list(_accounts.values())
+    return await store.list_accounts()
 
 
 @router.get(
@@ -127,9 +118,9 @@ async def list_accounts() -> list[dict[str, Any]]:
         404: {"model": ErrorResponse, "description": "Account not registered"},
     },
 )
-async def get_account(account_id: str) -> dict[str, Any]:
+async def get_account(account_id: str, store: StoreDep) -> dict[str, Any]:
     """Get a registered account by ID."""
-    account = _accounts.get(account_id)
+    account = await store.get_account(account_id)
     if not account:
         raise HTTPException(
             status_code=404,
@@ -151,12 +142,13 @@ async def get_account(account_id: str) -> dict[str, Any]:
         404: {"model": ErrorResponse, "description": "Account not registered"},
     },
 )
-async def delete_account(account_id: str) -> dict[str, str]:
+async def delete_account(account_id: str, store: StoreDep) -> dict[str, str]:
     """Remove a registered account."""
-    if account_id not in _accounts:
+    account = await store.get_account(account_id)
+    if not account:
         raise HTTPException(
             status_code=404,
             detail=f"Account {account_id!r} is not registered.",
         )
-    del _accounts[account_id]
+    await store.delete_account(account_id)
     return {"status": "deleted", "account_id": account_id}

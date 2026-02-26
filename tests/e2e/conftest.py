@@ -22,7 +22,8 @@ from typing import Generator
 import pytest
 import pytest_asyncio
 
-from sentinel_api.deps import set_neo4j_client
+from sentinel_api.deps import set_neo4j_client, set_store
+from sentinel_api.store import SentinelStore
 from sentinel_core.graph.client import Neo4jClient
 
 # ── Neo4j container ───────────────────────────────────────────────────────────
@@ -94,6 +95,24 @@ async def neo4j_client(neo4j_bolt_url) -> Neo4jClient:
     await client.close()
     # Reset global singleton so integration tests (TestClient) start clean
     set_neo4j_client(None)  # type: ignore[arg-type]
+
+
+@pytest_asyncio.fixture(scope="session")
+async def job_store() -> SentinelStore:
+    """
+    Session-scoped in-memory SQLite store for E2E tests.
+
+    Uses :memory: so no file is created; injected into the app via set_store().
+    The store is shared across all E2E tests in the session. Individual tests
+    that need a clean store should truncate the relevant tables via
+    ``await store._db.execute("DELETE FROM ...")``.
+    """
+    store = SentinelStore(db_path=":memory:")
+    await store.initialize()
+    set_store(store)
+    yield store
+    await store.close()
+    set_store(None)
 
 
 @pytest_asyncio.fixture(scope="function")

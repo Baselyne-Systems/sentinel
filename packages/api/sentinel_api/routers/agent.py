@@ -51,11 +51,12 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-
 from sentinel_agent.models import AnalysisResult
+
 from sentinel_api.deps import AgentDep, Neo4jDep
+from sentinel_api.limiter import AGENT_ANALYZE_LIMIT, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,9 @@ async def _stream_events(agent_gen) -> AsyncGenerator[bytes, None]:
         "internal reasoning as `thinking_delta` SSE events before producing the analysis."
     ),
 )
+@limiter.limit(AGENT_ANALYZE_LIMIT)
 async def analyze_finding(
+    request: Request,
     node_id: str,
     agent: AgentDep,
     neo4j: Neo4jDep,

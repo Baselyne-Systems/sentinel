@@ -15,24 +15,21 @@ The background job:
 
 from __future__ import annotations
 
-import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
-
-from sentinel_api.config import get_settings
-from sentinel_api.deps import Neo4jDep
-from sentinel_api.schemas import ErrorResponse, ScanJobResponse, ScanTriggerResponse
 from sentinel_perception.graph_builder import GraphBuilder, ScanResult
 
-router = APIRouter(prefix="/scan", tags=["scan"])
+from sentinel_api.config import get_settings
+from sentinel_api.deps import Neo4jDep, StoreDep
+from sentinel_api.limiter import SCAN_TRIGGER_LIMIT, limiter
+from sentinel_api.schemas import ErrorResponse, ScanJobResponse, ScanTriggerResponse
+from sentinel_api.store import SentinelStore
 
-# In-memory job store (Phase 1).
-# Phase 2 upgrade: replace with Redis or a lightweight DB for persistence + multi-instance support.
-_jobs: dict[str, dict[str, Any]] = {}
+router = APIRouter(prefix="/scan", tags=["scan"])
 
 
 class ScanRequest(BaseModel):
@@ -83,12 +80,16 @@ class ScanRequest(BaseModel):
     ),
     responses={
         200: {"description": "Scan job queued successfully"},
+        429: {"description": "Rate limit exceeded"},
     },
 )
+@limiter.limit(SCAN_TRIGGER_LIMIT)
 async def trigger_scan(
-    request: ScanRequest,
+    request: Request,
+    body: ScanRequest,
     background_tasks: BackgroundTasks,
     client: Neo4jDep,
+    store: StoreDep,
 ) -> dict[str, Any]:
     """
     Trigger a full AWS environment scan.
@@ -97,30 +98,32 @@ async def trigger_scan(
     timing) are available via ``GET /scan/{job_id}/status`` once completed.
     """
     settings = get_settings()
-    account_id = request.account_id or "default"
-    regions = request.regions or settings.regions_list
-    assume_role_arn = request.assume_role_arn or settings.aws_assume_role_arn or None
+    account_id = body.account_id or "default"
+    regions = body.regions or settings.regions_list
+    assume_role_arn = body.assume_role_arn or settings.aws_assume_role_arn or None
 
     job_id = str(uuid.uuid4())
-    _jobs[job_id] = {
+    job: dict[str, Any] = {
         "job_id": job_id,
         "status": "queued",
         "account_id": account_id,
         "regions": regions,
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "completed_at": None,
         "result": None,
         "error": None,
     }
+    await store.create_scan_job(job)
 
     background_tasks.add_task(
         _run_scan,
         job_id=job_id,
         client=client,
+        store=store,
         account_id=account_id,
         regions=regions,
         assume_role_arn=assume_role_arn,
-        clear_first=request.clear_first,
+        clear_first=body.clear_first,
     )
 
     return {"job_id": job_id, "status": "queued", "account_id": account_id}
@@ -134,14 +137,14 @@ async def trigger_scan(
         "Return the current status and results of a scan job. "
         "Poll this endpoint every 2–5 seconds while ``status`` is 'queued' or 'running'. "
         "When ``status`` is 'completed', the ``result`` field contains node/edge counts and findings. "
-        "Job history is kept in memory for the lifetime of the API process."
+        "Job history persists in the SQLite database across API restarts."
     ),
     responses={
         200: {"description": "Current job state"},
         404: {"model": ErrorResponse, "description": "No job with this ID exists"},
     },
 )
-async def get_scan_status(job_id: str) -> dict[str, Any]:
+async def get_scan_status(job_id: str, store: StoreDep) -> dict[str, Any]:
     """
     Get the status and result of a scan job.
 
@@ -151,7 +154,7 @@ async def get_scan_status(job_id: str) -> dict[str, Any]:
     - ``completed``: All steps finished. Check ``result`` for details.
     - ``failed``: An unrecoverable error occurred. Check ``error`` for the message.
     """
-    job = _jobs.get(job_id)
+    job = await store.get_scan_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found")
     return job
@@ -161,19 +164,20 @@ async def get_scan_status(job_id: str) -> dict[str, Any]:
     "/",
     response_model=list[ScanJobResponse],
     summary="List all scan jobs",
-    description="Return all scan jobs known to this API instance, ordered newest-first.",
+    description="Return all scan jobs, ordered newest-first. History persists across API restarts.",
     responses={
         200: {"description": "All scan jobs"},
     },
 )
-async def list_scans() -> list[dict[str, Any]]:
+async def list_scans(store: StoreDep) -> list[dict[str, Any]]:
     """List all scan jobs, most recent first."""
-    return sorted(_jobs.values(), key=lambda j: j["started_at"], reverse=True)
+    return await store.list_scan_jobs()
 
 
 async def _run_scan(
     job_id: str,
     client: Any,
+    store: SentinelStore,
     account_id: str,
     regions: list[str],
     assume_role_arn: str | None,
@@ -186,7 +190,7 @@ async def _run_scan(
     Non-fatal per-region errors are recorded in ``result.errors`` but do not
     cause the overall job to fail.
     """
-    _jobs[job_id]["status"] = "running"
+    await store.update_scan_job(job_id, status="running")
     try:
         builder = GraphBuilder(client)
         result: ScanResult = await builder.full_scan(
@@ -195,18 +199,16 @@ async def _run_scan(
             assume_role_arn=assume_role_arn,
             clear_first=clear_first,
         )
-        _jobs[job_id].update(
-            {
-                "status": "completed",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "result": result.to_dict(),
-            }
+        await store.update_scan_job(
+            job_id,
+            status="completed",
+            completed_at=datetime.now(UTC).isoformat(),
+            result=result.to_dict(),
         )
     except Exception as exc:
-        _jobs[job_id].update(
-            {
-                "status": "failed",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-                "error": str(exc),
-            }
+        await store.update_scan_job(
+            job_id,
+            status="failed",
+            completed_at=datetime.now(UTC).isoformat(),
+            error=str(exc),
         )

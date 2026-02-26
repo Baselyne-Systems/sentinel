@@ -1,0 +1,48 @@
+# Version control
+.git
+.github
+
+# Python
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+.pytest_cache
+.benchmarks
+.mypy_cache
+.ruff_cache
+
+# Node / Next.js
+frontend/node_modules
+frontend/.next
+
+# Test artifacts
+tests/
+htmlcov/
+.coverage
+
+# Docs
+docs/
+*.md
+!packages/*/README.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Database
+sentinel.db
+*.db-shm
+*.db-wal
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
