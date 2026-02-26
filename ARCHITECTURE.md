@@ -33,6 +33,24 @@ SENTINEL is an autonomous cloud security architect. It continuously:
 
 The graph is the single source of truth. Everything — posture flags, analysis results, remediation outcomes — lives as properties on graph nodes.
 
+### What is security posture?
+
+**Security posture** is the overall security state of a system at a point in time — how well each resource conforms to the security rules it should follow.
+
+In SENTINEL, posture is represented as `posture_flags`: a list of violation strings stamped directly onto each graph node after every scan. A node with no violations has an empty list. A node with problems accumulates one flag per violated rule plus a severity label:
+
+```
+n.posture_flags = ["CRITICAL", "S3_PUBLIC_ACCESS", "HIGH", "S3_NO_ENCRYPTION"]
+```
+
+Flags are **additive and denormalized** — every violation a node has is visible on the node itself, without joining to any rule table. This makes posture queries as simple as:
+
+```cypher
+MATCH (n) WHERE 'CRITICAL' IN n.posture_flags RETURN n
+```
+
+The **posture evaluator** produces flags by running CIS rules after each scan. The **findings view** in the UI is just nodes where `posture_flags` is non-empty. The **agent** reads flags to decide what to analyze. The **remediation planner** reads flags to decide what to fix. Posture is the shared language that connects all four packages.
+
 ```
 AWS Account
     │

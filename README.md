@@ -9,7 +9,7 @@ SENTINEL builds a live graph of your cloud environment, evaluates every resource
 ## What it does
 
 1. **Discovers** every resource in your AWS account (EC2, IAM, S3, RDS, Lambda, VPCs, Security Groups) via boto3 and writes them to a Neo4j graph.
-2. **Evaluates** all resources against ~30 CIS rules. Violations are stamped directly on graph nodes as `posture_flags`.
+2. **Evaluates** all resources against ~30 CIS rules. Violations are stamped directly on graph nodes as `posture_flags` — a string list of every rule the resource breaks plus a severity label (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`). This is the resource's **security posture**: its compliance state, queryable at any time without re-running the rules.
 3. **Analyzes** any finding using a configurable LLM backend (Anthropic by default; drop-in support for any OpenAI-compatible provider) with 4 read-only graph query tools. Streams reasoning token-by-token via SSE. Results are cached on the graph node. Optionally enables **extended thinking** (Anthropic) for deeper multi-step reasoning.
 4. **Remediates** flagged resources with human approval — proposes safe, reversible AWS changes; executes on approval; writes outcomes back to the graph.
 
