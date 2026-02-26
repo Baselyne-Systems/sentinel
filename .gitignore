@@ -29,7 +29,6 @@ env/
 
 # uv
 .python-version
-uv.lock
 
 # Testing
 .tox/
