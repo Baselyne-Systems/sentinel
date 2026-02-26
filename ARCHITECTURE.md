@@ -54,8 +54,8 @@ The **posture evaluator** produces flags by running CIS rules after each scan. T
 
 ```
 AWS Account
-    │
-    ▼ boto3 discovery
+    │ boto3 discovery
+    ▼
 sentinel-perception ──────────────────────────────────────┐
     │ GraphBuilder.full_scan()                            │
     │  ├─ EC2/SG/VPC/Subnet per region                   │
@@ -64,27 +64,23 @@ sentinel-perception ────────────────────
     │  ├─ IAM (global)                                    │
     │  └─ S3 (global)                                     │
     │                                                     │
-    ▼ upsert nodes + edges (MERGE on node_id)             │
+    │ upsert nodes + edges (MERGE on node_id)             │
+    ▼                                                     │
 Neo4j Graph DB ◄──────────────────────────────────────────┘
     │
-    ├─◄── sentinel-core (client, queries, CIS evaluator)
+    ├── sentinel-core (client, queries, CIS evaluator)
+    │   ↳ stamps posture_flags on violating nodes after each scan
     │
-    ▼ posture_flags stamped on nodes
+    ├── sentinel-agent (read-only Cypher tools → Claude → analysis cached on node)
     │
-    ├─◄── sentinel-agent (read-only Cypher tools → Claude → analysis cached on node)
-    │
-    └─◄── sentinel-remediation (planner reads flags → executor writes back outcomes)
+    └── sentinel-remediation (planner reads flags → executor writes outcomes)
 
-sentinel-api (FastAPI)
-    ├─ imports all 4 packages
-    ├─ exposes REST endpoints
-    └─ serves SSE streams to frontend
-
-Next.js Frontend
-    ├─ Dashboard (scan trigger, posture summary)
-    ├─ Graph Explorer (Cytoscape.js)
-    ├─ Findings (CIS violations)
-    └─ Remediations (propose / approve / reject)
+sentinel-api (FastAPI) orchestrates all four packages
+    ├─ REST endpoints ──────────────────────────────────► Next.js Frontend
+    └─ SSE streams                                          ├─ Dashboard
+                                                            ├─ Graph Explorer
+                                                            ├─ Findings
+                                                            └─ Remediations
 ```
 
 ---
@@ -1032,101 +1028,82 @@ accountsApi   // register, list, get
 
 ### 9.1 Full Scan Flow
 
-```
-Browser                API                    GraphBuilder         Neo4j
-  │                     │                         │                  │
-  │  POST /scan/trigger  │                         │                  │
-  │─────────────────────►│                         │                  │
-  │  {job_id, "queued"}  │                         │                  │
-  │◄─────────────────────│                         │                  │
-  │                      │  BackgroundTask:         │                  │
-  │                      │  _run_scan(job_id)        │                  │
-  │                      │─────────────────────────►│                  │
-  │                      │                    full_scan():             │
-  │                      │                    EC2/Lambda/RDS (parallel per region)
-  │                      │                    IAM (global)             │
-  │                      │                    S3 (global)              │
-  │                      │                         │  upsert_node x N  │
-  │                      │                         │─────────────────►│
-  │                      │                         │  upsert_edge x N  │
-  │                      │                         │─────────────────►│
-  │                      │                    PostureEvaluator.evaluate()
-  │                      │                         │  set_posture_flags│
-  │                      │                         │─────────────────►│
-  │                      │  job.status = completed  │                  │
-  │                      │◄─────────────────────────│                  │
-  │                      │                         │                  │
-  │  GET /scan/{id}/status│                         │                  │
-  │─────────────────────►│                         │                  │
-  │  {status: "completed"}│                         │                  │
-  │◄─────────────────────│                         │                  │
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API
+    participant G as GraphBuilder
+    participant N as Neo4j
+
+    B->>A: POST /scan/trigger
+    A-->>B: {job_id, "queued"}
+    Note over A,G: BackgroundTask: _run_scan(job_id)
+    A->>G: full_scan()
+    Note over G: EC2/Lambda/RDS per region (parallel)<br/>IAM (global) · S3 (global)
+    G->>N: upsert_node × N
+    G->>N: upsert_edge × N
+    Note over G: PostureEvaluator.evaluate()
+    G->>N: set_posture_flags
+    G-->>A: job.status = completed
+    B->>A: GET /scan/{id}/status
+    A-->>B: {status: "completed"}
 ```
 
 ### 9.2 Agent Analysis Flow
 
-```
-Browser               API               SentinelAgent        Neo4j       Anthropic
-  │                    │                     │                  │              │
-  │  POST /analyze     │                     │                  │              │
-  │───────────────────►│                     │                  │              │
-  │  StreamingResponse │                     │                  │              │
-  │◄──- - - - - - - - -│                     │                  │              │
-  │                    │  agent.analyze_finding(node_id)        │              │
-  │                    │────────────────────►│                  │              │
-  │                    │                     │  query(node)     │              │
-  │                    │                     │─────────────────►│              │
-  │                    │                     │◄─────────────────│              │
-  │                    │                     │                  │  stream()    │
-  │                    │                     │──────────────────────────────►│
-  │  text_delta events │                     │◄──────────────────────────────│
-  │◄──────────────────────────────────────────                  │              │
-  │                    │                     │  tool_use: get_neighbors        │
-  │                    │                     │─────────────────►│              │
-  │  tool_use event    │                     │◄─────────────────│              │
-  │◄──────────────────────────────────────────                  │              │
-  │                    │                     │  (repeat up to 8 rounds)        │
-  │                    │                     │                  │              │
-  │                    │                     │  cache result on node           │
-  │                    │                     │─────────────────►│              │
-  │  analysis_complete │                     │                  │              │
-  │◄──────────────────────────────────────────                  │              │
-  │  [DONE]            │                     │                  │              │
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API
+    participant S as SentinelAgent
+    participant N as Neo4j
+    participant C as Anthropic / LLM
+
+    B->>A: POST /analyze
+    A-->>B: StreamingResponse (SSE)
+    A->>S: agent.analyze_finding(node_id)
+    S->>N: query(node)
+    N-->>S: node data
+    S->>C: stream_turn()
+    loop up to 8 rounds
+        C-->>S: text_delta
+        S-->>B: text_delta event
+        C-->>S: tool_use (e.g. get_neighbors)
+        S->>N: tool query
+        N-->>S: results
+        S-->>B: tool_use event
+    end
+    S->>N: cache AnalysisResult on node
+    S-->>B: analysis_complete
 ```
 
 ### 9.3 Remediation Flow
 
-```
-Browser               API               Planner/Executor      Neo4j       AWS
-  │                    │                     │                  │            │
-  │  POST /propose     │                     │                  │            │
-  │───────────────────►│                     │                  │            │
-  │                    │  planner.propose()  │                  │            │
-  │                    │────────────────────►│  query(node)     │            │
-  │                    │                     │─────────────────►│            │
-  │                    │                     │◄─────────────────│            │
-  │                    │                     │  build jobs from flags        │
-  │  [job1, job2]      │◄────────────────────│                  │            │
-  │◄──────────────────-│                     │                  │            │
-  │                    │                     │                  │            │
-  │  (user reviews)    │                     │                  │            │
-  │                    │                     │                  │            │
-  │  POST /approve     │                     │                  │            │
-  │───────────────────►│                     │                  │            │
-  │  {status: approved}│  BackgroundTask:    │                  │            │
-  │◄──────────────────-│  executor.execute() │                  │            │
-  │                    │────────────────────►│                  │            │
-  │                    │                     │  asyncio.to_thread(boto3)     │
-  │                    │                     │──────────────────────────────►│
-  │                    │                     │◄──────────────────────────────│
-  │                    │                     │  SET n.remediated_at          │
-  │                    │                     │─────────────────►│            │
-  │                    │  job.status=COMPLETED│                  │            │
-  │                    │◄────────────────────│                  │            │
-  │                    │                     │                  │            │
-  │  GET /remediation/{id}                   │                  │            │
-  │───────────────────►│                     │                  │            │
-  │  {status: "completed", output: {...}}     │                  │            │
-  │◄──────────────────-│                     │                  │            │
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API
+    participant P as Planner/Executor
+    participant N as Neo4j
+    participant W as AWS
+
+    B->>A: POST /propose {node_id}
+    A->>P: planner.propose()
+    P->>N: query(node)
+    N-->>P: node + posture_flags
+    P-->>A: [job1, job2, ...]
+    A-->>B: [job1, job2, ...]
+    Note over B: user reviews proposals
+    B->>A: POST /approve {job_id}
+    A-->>B: {status: approved}
+    Note over A,P: BackgroundTask: executor.execute()
+    A->>P: execute()
+    P->>W: asyncio.to_thread(boto3 call)
+    W-->>P: success
+    P->>N: SET n.remediated_at
+    P-->>A: job.status = COMPLETED
+    B->>A: GET /remediation/{id}
+    A-->>B: {status: "completed", output: {...}}
 ```
 
 ---
